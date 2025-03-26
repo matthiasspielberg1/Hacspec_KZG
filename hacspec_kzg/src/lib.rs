@@ -1,10 +1,5 @@
 use hacspec_bls12_381::*;
 
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
 pub fn create_trusted_setup (degree: u8, tau: u128) -> (Vec<G1>, G2, G2) {
 
     let g1_base_point: G1 = g1();
