@@ -61,6 +61,19 @@ mod tests {
     fn it_works() {
         let tau = 0xfffffffffffffffffffff;
         let setup = create_trusted_setup(2, tau);
+
+        let scalar = Scalar::from_literal(3u128);
+    
+        let p: G1 = g1();
+        let q: G2 = g2();
+    
+        // Scalar multiplication
+        let p_times_scalar = g1mul(scalar, p);
+        let q_times_scalar = g2mul(scalar, q);
+
+    
+        // Compute pairing
+        let e = pairing(p_times_scalar, q);
    
         assert_eq!(0, 0);
     }
