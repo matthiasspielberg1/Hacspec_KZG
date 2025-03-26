@@ -4,3 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hacspec-bls12-381 = { path = "../../hacspec/examples/bls12-381" }
