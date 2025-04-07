@@ -4,9 +4,15 @@ use hacspec_lib::*;
 
 fn main() {
 
+    let scalar = Scalar::from_hex("fffffffffffffffffffff");
+
+    let cubed = scalar.pow(3);
+
+    println!("CUBED: {}",cubed);
+
     println!("\n========== KZG PROTOCOL DEBUG OUTPUT ==========");
 
-    let tau_scalar= Scalar::from_hex("16000000000000043200000");
+    let tau_scalar= Scalar::from_hex("fffffffffffffffffffffffffffff");
 
     println!("tau_value: {:?}", tau_scalar);
 
@@ -26,11 +32,11 @@ fn main() {
     ]);
 
 
-    let commitment = create_commitment(&p2, &setup);
+    let commitment = commit(&p2, &setup);
     println!("\nCommitment is:\n {:?}", commitment);
     println!("\nFinished setup and commitment");
 
-    let request_scalar = Scalar::from_hex("2");
+    let request_scalar = Scalar::from_hex("fffffffffffffffffffff");
 
     // 15900000000000000000000000000000
 
@@ -61,7 +67,7 @@ fn main() {
     println!("Q(x) = {:?}", q);
     println!("Available powers of tau: {:?}", setup.0.len());
     
-    let pi = calc_pi(&q, &setup);
+    let pi = commit(&q, &setup);
     println!("\nThis is Pi: {:?}", pi);
     
     // Debug: detailed proof calculation
@@ -168,7 +174,7 @@ fn create_trusted_setup (degree: &u32, tau: Scalar) -> (Vec<G1>, G2, G2) {
 }
 
 
-fn create_commitment (polynomium: &Vec<Scalar>, setup: &(Vec<G1>, G2, G2)) -> G1 {
+fn commit (polynomium: &Vec<Scalar>, setup: &(Vec<G1>, G2, G2)) -> G1 {
     println!("Creating commitment C = [P(τ)]₁...");
 
     let powers_of_tau_g1 = &setup.0;
@@ -182,7 +188,7 @@ fn create_commitment (polynomium: &Vec<Scalar>, setup: &(Vec<G1>, G2, G2)) -> G1
                  
         let power_index = powers_of_tau_g1.len() - polynomium.len() + i;
 
-        println!("Power of tau being calculated with: {:?}", powers_of_tau_g1[i]);
+        println!("Power of tau being calculated with: {:?}", powers_of_tau_g1[power_index]);
         
         let tau_times_coefficient = g1mul(polynomium[i], powers_of_tau_g1[power_index]);
         commitment = g1add(commitment, tau_times_coefficient);
@@ -257,26 +263,6 @@ fn calc_q (r: &Vec<Scalar>, request: Scalar) -> Vec<Scalar> {
     q
 }
 
-fn calc_pi(q: &Vec<Scalar>, setup: &(Vec<G1>, G2, G2)) -> G1 {
-    println!("Calculating proof π = [Q(τ)]₁...");
-    let powers_of_tau_g1 = &setup.0;
-    let mut pi = g1mul(Scalar::from_literal(0), g1());
-    println!("Initial π set to identity");
-    
-    for i in 0..q.len() {
-        let power_index = powers_of_tau_g1.len() - q.len() + i;
-        println!("Processing term {}: coefficient {} (mapping to index {})", 
-                 i, q[i], power_index);
-        
-        let qi_scalar = q[i];
-        let term = g1mul(qi_scalar, powers_of_tau_g1[power_index]);
-        pi = g1add(pi, term);
-    }
-    
-    println!("π calculation complete");
-    pi
-}
-
 
 
 #[cfg(test)]
@@ -294,7 +280,7 @@ mod tests {
         impl Arbitrary for ConstrainedTau {
             fn arbitrary(g: &mut Gen) -> Self {
                 // Value between 1 and 100 inclusive
-                let val = (u128::arbitrary(g) % 10) + 1;
+                let val = (u128::arbitrary(g));
                 let tau_scalar = Scalar::from_literal(val);
                 let tau_scalar_hex = Scalar::from_hex("180000000000000000000000000000002");
                 ConstrainedTau(tau_scalar)
@@ -307,7 +293,7 @@ mod tests {
         impl Arbitrary for ConstrainedRequest {
             fn arbitrary(g: &mut Gen) -> Self {
                 // Value between 1 and 100 inclusive
-                let val = (u128::arbitrary(g) % 100) + 1;
+                let val = (u128::arbitrary(g));
                 let val_scalar = Scalar::from_literal(val);
                 ConstrainedRequest(val_scalar)
             }
@@ -319,14 +305,14 @@ mod tests {
         impl Arbitrary for ConstrainedPoly {
             fn arbitrary(g: &mut Gen) -> Self {
                 // Length between 3 and 5 inclusive
-                let sizes = [3];
+                let sizes = [10];
                 let size = *g.choose(&sizes).unwrap();
                 
                 let mut vec = Vec::with_capacity(size);
                 
                 for _ in 0..size {
                     // Coefficient between 1 and 10 inclusive
-                    let val = (u128::arbitrary(g) % 500) + 1;
+                    let val = (u128::arbitrary(g));
                     let val_scalar = Scalar::from_literal(val);
                     vec.push(val_scalar);
                 }
@@ -350,11 +336,11 @@ mod tests {
                 poly_scalar.push(poly[i]);
             }
 
-            let commitment = create_commitment(&(&poly_scalar), &setup);
+            let commitment = commit(&(&poly_scalar), &setup);
             let value = calc_request(&poly_scalar, &(request));
             let rx = calc_r(&poly_scalar, &value);
             let qx = calc_q(&rx, (request));
-            let pi = calc_pi(&qx, &setup);
+            let pi = commit(&qx, &setup);
             let tau_g2 = setup.2; 
             let x0_g2 = g2mul(request, g2());
             let tau_minus_x0 = g2sub(tau_g2, x0_g2);
