@@ -1,0 +1,12 @@
+[package]
+name = "kzg"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hacspec-bls12-381 = { path = "../hacspec/examples/bls12-381" }
+hacspec-lib = { path = "../hacspec/lib" }
+
+[dev-dependencies]
+quickcheck = "1.0"
+quickcheck_macros = "1.0"  # Optional, for the #[quickcheck] attribute
