@@ -1,11 +1,15 @@
 [package]
 name = "kzg"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 hacspec-bls12-381 = { path = "../hacspec/examples/bls12-381" }
-hacspec-lib = { path = "../hacspec/lib" }
+rand = "0.9"
+hacspec-sha256 = {path = "../hacspec/examples/sha256"}
+hacspec-lib = {path = "../hacspec/lib"}
+# maybe required
+# specified in the generated fstar makefile
 
 [dev-dependencies]
 quickcheck = "1.0"
