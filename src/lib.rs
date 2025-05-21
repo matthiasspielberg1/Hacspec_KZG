@@ -2,25 +2,14 @@
 #![allow(dead_code)]
 mod curve;
 
-use hacspec_bls12_381::*;
-use hacspec_sha256::hash;
 use hacspec_lib::*;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use rand::Rng;
 use curve::Curve;
 
 //TODO
 // sample a vector of random numbers really often, then pass that stream to functions,
 // so we dont rely on proving random numbers
-
-
-fn g1sub (p: G1, q: G1) -> G1 {
-    g1add(p, g1neg(q))
-}
-
-fn g2sub (p: G2, q: G2) -> G2 {
-    g2add(p, g2neg(q))
-}
 
 
 // applies the polynomial to input x
@@ -33,6 +22,18 @@ fn apply<T: Curve>(polynomium: &Vec<T::Scalar>, x: &T::Scalar) -> T::Scalar {
     }
 
     result
+}
+
+// generates n random u128
+// lets us avoid generating randomness directly in our kzg implementation
+fn generate_randomness(n: usize) -> Vec<u128> {
+    let mut rand: Vec<u128> = Vec::with_capacity(n); 
+
+    let mut rng = rand::rng();
+    for i in 0..n {
+        rand.push(rng.random())
+    }
+    rand
 }
 
 
@@ -80,7 +81,6 @@ fn calculate_psi<T: Curve>(f: &Vec<T::Scalar>, f_x0: T::Scalar, x0: T::Scalar) -
 }
 
 
-
 fn commit_poly<T: Curve>(polynomium: &Vec<T::Scalar> , pk: &Vec<T::G1>, generator: T::G1) -> T::G1 {
 
     // commit to the original polynomial
@@ -95,35 +95,20 @@ fn commit_poly<T: Curve>(polynomium: &Vec<T::Scalar> , pk: &Vec<T::G1>, generato
     commitment
 }
 
-// fn fiat_shamir_hash(z1: G1, z2: G1, n1: G1, n2: G1, h: G1) -> Scalar {
-//     let g = g1_to_byte_seq(g1());
-//     let h = g1_to_byte_seq(h);
-//     let z1 = g1_to_byte_seq(z1);
-//     let z2 = g1_to_byte_seq(z2);
-//     let n1 = g1_to_byte_seq(n1);
-//     let n2 = g1_to_byte_seq(n2);
 
-//     let bytes = g.concat(&h).concat(&z1).concat(&z2).concat(&n1).concat(&n2);
-    
-//     let digest = hash(&bytes);
-
-//     Scalar::from_byte_seq_be(&digest)
-// }
-
-
-fn setup<T: Curve>(degree: u128) -> Pk<T> {
+fn setup<T: Curve>(degree: u128, random: &mut Vec<u128>) -> Pk<T> {
     let mut rng = rand::rng(); 
 
-    // generate a random alpha value
-    let alpha =  T::scalar_from_literal(&rng.random());
+
+    let alpha =  T::scalar_from_literal(&random.pop().expect("not enough randomness provided"));
 
     let mut setup_g1 = Vec::new();
     let mut setup_h1 = Vec::new();
     
     // generate h from some random lambda
-    let h = T::g1_mul(&T::scalar_from_literal(&rng.random()), &T::g1());
+    let h = T::g1_mul(&T::scalar_from_literal(&random.pop().expect("not enough randomness provided")), &T::g1());
 
-    for i in 0..degree+1 {
+    for i in 0..=degree {
         let power: u128 = (degree - i).into();
         let alpha_power= T::scalar_pow(&alpha, &power);
 
@@ -138,11 +123,14 @@ fn setup<T: Curve>(degree: u128) -> Pk<T> {
 
 
 // commit to the set
-fn commitzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>) -> (T::G1, Vec<T::Scalar>, Vec<T::Scalar>) {
+fn commitzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, random: &mut Vec<u128>) -> (T::G1, Vec<T::Scalar>, Vec<T::Scalar>) {
     let mut phi = vec![T::scalar_from_literal(&1)];
     
     let zero = T::scalar_from_literal(&0);
-
+    
+    // Constructing the set is O(n^3) 
+    // could be optimized using horner's method
+    // or fft. but they are out of scope
     for i in set {
         let mul = vec![T::scalar_from_literal(&1),  zero - *i ];
         phi = multiply::<T>(&phi, &mul);
@@ -154,7 +142,7 @@ fn commitzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>) -> (T::G1, Vec<T::Sc
     
     // create a random hiding polynomial
     for i in 0..phi_hat.len() {
-        phi_hat[i] = T::scalar_from_literal(&rng.random());
+        phi_hat[i] = T::scalar_from_literal(&random.pop().expect("not enough randomness provided"));
     }
 
     
@@ -186,7 +174,7 @@ fn create_witness<T: Curve>(phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, i: T
 }
 
 
-fn queryzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, kj: T::Scalar)
+fn queryzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, kj: T::Scalar, random: &mut Vec<u128>)
 -> (T::Scalar, T::G1, Option<T::Scalar>, Option<(T::G1, T::G1, T::G1, T::G1, T::Scalar, T::Scalar)>) {
 
     let (kj, phi_kj, phi_hat_kj, witness) = create_witness(phi, phi_hat, kj, pk);
@@ -199,7 +187,7 @@ fn queryzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, phi: &Vec<T::Scalar>,
     let p1 = T::g1_mul(&phi_kj, &T::g1());
     let p2 = T::g1_mul(&phi_hat_kj, &pk.h1);
 
-    let (n1, n2, s1, s2) = fiat_shamir_proof(pk, phi_kj, phi_hat_kj);
+    let (n1, n2, s1, s2) = fiat_shamir_proof(pk, phi_kj, phi_hat_kj, random);
 
     return (kj, witness, None, Some((p1, p2, n1, n2, s1, s2)))    
 }
@@ -210,7 +198,6 @@ fn verifyzk<T: Curve>(pk: &Pk<T>, commitment: T::G1, pi_sj: Option<(T::G1, T::G1
 
     if phi_hat_kj.is_some() {
         let phi_hat_kj= phi_hat_kj.expect("invalid state");
-        println!("kj is in the set");
         return verifyeval(pk, commitment, kj, T::scalar_from_literal(&0), phi_hat_kj, witness);
     }
     // always revealing phi_hat_kj allows us to use the verifyeval function above, such that the commiter cannot deny kj is in the set
@@ -219,8 +206,6 @@ fn verifyzk<T: Curve>(pk: &Pk<T>, commitment: T::G1, pi_sj: Option<(T::G1, T::G1
     if pi_sj.is_none() {
         return false
     } 
-
-    
 
     let zero = T::g1_mul(&T::scalar_from_literal(&0), &T::g1());
 
@@ -239,7 +224,6 @@ fn verifyzk<T: Curve>(pk: &Pk<T>, commitment: T::G1, pi_sj: Option<(T::G1, T::G1
     if !fiat_shamir_verify::<T>(p1, T::g1(), n1, s1, c) || !fiat_shamir_verify::<T>(p2, pk.h1, n2, s2, c) {
        return false 
     }
-    println!("fiat shamir is valid");
 
     let proof = T::g1_add(&p1, &p2);
     
@@ -263,10 +247,9 @@ fn verifyeval<T: Curve>(pk: &Pk<T>, commitment: T::G1, kj: T::Scalar, phi_kj: T:
     left == right
 }
 
-fn fiat_shamir_proof<T: Curve>(pk: &Pk<T>, a: T::Scalar, b: T::Scalar) -> (T::G1, T::G1, T::Scalar, T::Scalar) {
-    let mut rng = rand::rng();
-    let r1 = rng.random();
-    let r2 = rng.random();
+fn fiat_shamir_proof<T: Curve>(pk: &Pk<T>, a: T::Scalar, b: T::Scalar, random: &mut Vec<u128>) -> (T::G1, T::G1, T::Scalar, T::Scalar) {
+    let r1 = random.pop().expect("not enough randomness provided");
+    let r2 = random.pop().expect("not enough randomness provided");
 
     let r1 = T::scalar_from_literal(&r1); 
     let r2 = T::scalar_from_literal(&r2); 
@@ -292,6 +275,8 @@ fn fiat_shamir_verify<T: Curve>(z: T::G1, gen: T::G1, nonce: T::G1, s: T::Scalar
 
     left == right
 }
+
+
 
 
 #[cfg(test)]
@@ -330,18 +315,19 @@ mod tests {
         // Define custom generators similar to your existing code
         fn prop(poly: ConstrainedPoly, kj: u128) -> bool {
             use curve::SpecCurve as Curve;
+            
 
             let kj = Curve::scalar_from_literal(&kj);
             
             let poly = poly.0;
 
-            // let kj = poly[poly.len() - 2]; 
+            let mut random = generate_randomness(poly.len() + 6);
 
             let degree = poly.len() + 2;
             
 
             println!("degree: {degree}");
-            let pk: Pk<SpecCurve> = setup(degree as u128);
+            let pk: Pk<SpecCurve> = setup(degree as u128, &mut random);
             
             println!("created trusted setup");
             
@@ -352,12 +338,12 @@ mod tests {
                 set.insert(Curve::scalar_from_literal(&i)); 
             }
 
-            let (commitment, phi, phi_hat) = commitzk(&pk, &set);
+            let (commitment, phi, phi_hat) = commitzk(&pk, &set, &mut random);
             
             println!("{:?}", phi);
             println!("commited");
 
-            let (kj, witness, phi_hat_kj, pi_sj) = queryzk(&pk, &set, &phi, &phi_hat, kj);
+            let (kj, witness, phi_hat_kj, pi_sj) = queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random);
             println!("queried");
             
 
@@ -381,8 +367,9 @@ mod tests {
     #[quickcheck]
     fn test_fiat_verification(a: u128, b: u128, lambda: u128) -> bool {
         
+        let mut random = generate_randomness(5);
         
-        let pk: Pk<SpecCurve> = setup(1);
+        let pk: Pk<SpecCurve> = setup(1, &mut random);
 
         
         let a = Scalar::from_literal(a);
@@ -392,7 +379,7 @@ mod tests {
         let p2 = g1mul(b, pk.h1);
 
             
-        let (n1, n2, s1, s2) = fiat_shamir_proof(&pk, a, b);
+        let (n1, n2, s1, s2) = fiat_shamir_proof(&pk, a, b, &mut random);
         
 
         let c = SpecCurve::fiat_shamir_hash(p1, p2, n1, n2, pk.h1);
@@ -405,7 +392,11 @@ mod tests {
     #[quickcheck]
     fn test_fiat_forgery(a: u128, b: u128) -> bool {
 
-    let pk: Pk<curve::SpecCurve> = setup(1);
+
+    let mut random = generate_randomness(20);
+
+
+    let pk: Pk<curve::SpecCurve> = setup(1, &mut random);
 
     let a = Scalar::from_literal(a);
     let b = Scalar::from_literal(b);
@@ -415,12 +406,10 @@ mod tests {
     
 
     // fake knowledge of a by simulating guessing it
-    let mut rng = rand::rng();
-    let a = Scalar::from_literal(rng.random());
-
+    let a = Scalar::from_literal(random.pop().expect("not enough randomness provided"));
 
         
-    let (n1, n2, s1, s2) = fiat_shamir_proof(&pk, a, b);
+    let (n1, n2, s1, s2) = fiat_shamir_proof(&pk, a, b, &mut random);
     
 
     let c = SpecCurve::fiat_shamir_hash(p1, p2, n1, n2, pk.h1);
@@ -436,45 +425,45 @@ mod tests {
 
     #[quickcheck] 
     fn test_kzg_commitment_fast(poly: ConstrainedPoly, kj: u128) -> bool {
-            use curve::FastCurve as Curve;
+        use curve::FastCurve as Curve;
 
-            let kj = Curve::scalar_from_literal(&kj);
-            
-            let poly = poly.0;
+        let kj = Curve::scalar_from_literal(&kj);
+        
+        let poly = poly.0;
 
-            let degree = poly.len() + 2;
-            
-
-            println!("degree: {degree}");
-            let pk: Pk<Curve> = setup(degree as u128);
-            
-            println!("created trusted setup");
-            
-
-            let mut set = HashSet::new();
-
-            for i in poly {
-                set.insert(Curve::scalar_from_literal(&i)); 
-            }
-
-            let (commitment, phi, phi_hat) = commitzk(&pk, &set);
-            
-            println!("{:?}", phi);
-            println!("commited");
-
-            let (kj, witness, phi_hat_kj, pi_sj) = queryzk(&pk, &set, &phi, &phi_hat, kj);
-            println!("queried");
-            
-
-
-
-            let result = verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
-            println!("verified: {result}");
-            
-
-            return result
+        let degree = poly.len() + 2;
+        
+        let mut random = generate_randomness(poly.len() + 5);
         
 
+        println!("degree: {degree}");
+        let pk: Pk<Curve> = setup(degree as u128, &mut random);
+        
+        println!("created trusted setup");
+        
+
+        let mut set = HashSet::new();
+
+        for i in poly {
+            set.insert(Curve::scalar_from_literal(&i)); 
         }
+
+        let (commitment, phi, phi_hat) = commitzk(&pk, &set, &mut random);
+        
+        println!("{:?}", phi);
+        println!("commited");
+
+        let (kj, witness, phi_hat_kj, pi_sj) = queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random);
+        println!("queried");
+        
+
+        let result = verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
+        println!("verified: {result}");
+        
+
+        return result
+    
+
+    }
 
 }

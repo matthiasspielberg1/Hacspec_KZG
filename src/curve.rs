@@ -7,7 +7,7 @@ mod Spec {
 mod Sha {
     pub use hacspec_sha256::*;
 }
-
+use blstrs;
 
 pub trait Curve {
     type G1:
@@ -72,6 +72,7 @@ fn g1_to_byte_seq(g: Spec::G1) -> hacspec_lib::ByteSeq {
 pub struct FastCurve;
 pub struct SpecCurve;
 
+
 impl Curve for SpecCurve {
 
     type G1 = Spec::G1;
@@ -134,22 +135,24 @@ impl Curve for SpecCurve {
 }
 
 
+
+use blstrs::G1Projective;
+use group::{ff::{Field, PrimeField}, Group};
+
 impl Curve for FastCurve {
-   type G1 = bls12_381::G1Projective;
-   type G2 = bls12_381::G2Projective;
-   type Scalar = bls12_381::Scalar;
-   type Element = bls12_381::Gt;
-   
+    type G1 = blstrs::G1Projective;
+    type G2 = blstrs::G2Projective;
+    type Scalar = blstrs::Scalar;
+    type Element = blstrs::Gt;
+ 
     fn scalar_from_literal(x: &u128) -> Self::Scalar {
-        let big_end = ((x & 0xFFFFFFFFFFFFFFFF0000000000000000) >> 64) as u64;
-        let small_end= (x & 0x0000000000000000FFFFFFFFFFFFFFFF) as u64;
-        bls12_381::Scalar::from_raw([small_end, big_end, 0, 0])
+        blstrs::Scalar::from_u128(x.clone())
     }
     fn scalar_pow(x: &Self::Scalar, y: &u128) -> Self::Scalar {
-        //extract the u128 into two u64 consisting of the upper and lower parts
         let big_end = ((y & 0xFFFFFFFFFFFFFFFF0000000000000000) >> 64) as u64;
         let small_end= (y & 0x0000000000000000FFFFFFFFFFFFFFFF) as u64;
-        x.pow(&[small_end, big_end, 0, 0])
+        let exp = vec![small_end, big_end];
+        x.pow(exp)
     }
     fn g1_mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1 {
         y.mul(x)
@@ -170,15 +173,15 @@ impl Curve for FastCurve {
         x - y
     }
     fn g1() -> Self::G1 {
-        bls12_381::G1Projective::generator()
+        G1Projective::generator()
     }
     fn g2() -> Self::G2 {
-       bls12_381::G2Projective::generator() 
+       blstrs::G2Projective::generator() 
     }
     fn pairing(x: &Self::G1, y: &Self::G2) -> Self::Element {
-        let left = bls12_381::G1Affine::from(x);
-        let right = bls12_381::G2Affine::from(y);
-        bls12_381::pairing(&left, &right)
+        let left = blstrs::G1Affine::from(x);
+        let right = blstrs::G2Affine::from(y);
+        blstrs::pairing(&left, &right)
     }
     
     fn fiat_shamir_hash(z1: Self::G1, z2: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar {
@@ -192,10 +195,9 @@ impl Curve for FastCurve {
         h.to_string().hash(&mut hasher);
         
         let res = hasher.finish();
-        bls12_381::Scalar::from(res)
+        Self::Scalar::from(res)
     } 
 }
-
 
 
 #[cfg(test)] 
@@ -212,8 +214,8 @@ mod test {
         let specscalar = SpecCurve::scalar_from_literal(&base);
         let fastscalar = FastCurve::scalar_from_literal(&base);
         
-        let spec = specscalar.to_le_bytes();
-        let fast = fastscalar.to_bytes().to_vec();
+        let spec = specscalar.to_be_bytes();
+        let fast = fastscalar.to_bytes_be().to_vec();
 
         spec == fast
     } 
@@ -229,13 +231,142 @@ mod test {
         let fastpow = FastCurve::scalar_pow(&fastscalar, &exp);
 
         
-        let spec = specpow.to_le_bytes();
-        let fast = fastpow.to_bytes().to_vec();
+        let spec = specpow.to_be_bytes();
+        let fast = fastpow.to_bytes_be().to_vec();
 
         spec == fast
     } 
 
-    
-    
+    #[quickcheck]
+    fn test_trait_commitment(scalar: u128, kj_literal: u128) -> bool {
+        use std::collections::HashSet;
+        use std::time;
 
+        
+        let poly = vec![1, 12, 43, 8423790, 27983, 83, 89203, 12912987798231, 65];
+        let degree = poly.len() + 2;
+        
+        let mut random = crate::generate_randomness(poly.len() + 5);
+
+        let pk = crate::setup::<FastCurve>(degree as u128, &mut random);
+        let mut set = HashSet::new();
+        for i in poly.iter() {
+            set.insert(FastCurve::scalar_from_literal(i)); 
+        }
+        
+        let fast_start = time::Instant::now();
+        let (commitment, phi, phi_hat) = crate::commitzk(&pk, &set, &mut random);
+        let kj = FastCurve::scalar_from_literal(&kj_literal); 
+        let (kj, witness, phi_hat_kj, pi_sj) = crate::queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random); 
+        let fast_result = crate::verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
+        let fast_time = fast_start.elapsed();
+        
+        println!("fast implementation done in {}", fast_time.as_millis());
+        
+        let mut random = crate::generate_randomness(poly.len() + 5);
+        let pk = crate::setup::<SpecCurve>(degree as u128, &mut random);
+        let mut set = HashSet::new();
+        for i in poly.iter() {
+            set.insert(SpecCurve::scalar_from_literal(i)); 
+        }
+        let spec_start = time::Instant::now();
+        let (commitment, phi, phi_hat) = crate::commitzk(&pk, &set, &mut random);
+        let kj = SpecCurve::scalar_from_literal(&kj_literal); 
+        let (kj, witness, phi_hat_kj, pi_sj) = crate::queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random); 
+        let slow_result = crate::verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
+        let spec_time = spec_start.elapsed();
+        
+        println!("slow implementation done in {}", spec_time.as_secs());
+
+
+        let result = fast_result == slow_result;
+
+        println!("result: {result}");
+        result
+    }
+    
+    #[test]
+    fn benchmark() { 
+        use std::collections::HashSet;
+        use std::time::{Instant, Duration};
+        
+        struct Timer(Vec<Duration>, Vec<Duration>, Vec<Duration>, Vec<Duration>);
+
+
+        
+        
+
+        fn benchmark_single_iteration<T: Curve>(poly: &Vec<u128>, times: &mut Timer) {
+            let degree = poly.len() + 2; 
+            let mut random = crate::generate_randomness(poly.len() + 6);
+             
+            let kj_literal = random.pop().expect("not enough randomness provided"); 
+
+            let mut timer = Instant::now();
+            let pk = crate::setup::<T>(degree as u128, &mut random);
+            times.0.push(timer.elapsed());
+
+            let mut set = HashSet::new();
+            for i in poly.iter() {
+                set.insert(T::scalar_from_literal(i)); 
+            }
+            
+            timer = Instant::now();
+            let (commitment, phi, phi_hat) = crate::commitzk(&pk, &set, &mut random);
+            times.1.push(timer.elapsed());
+
+            let kj = T::scalar_from_literal(&kj_literal); 
+
+            timer = Instant::now();
+            let (kj, witness, phi_hat_kj, pi_sj) = crate::queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random); 
+            times.2.push(timer.elapsed());
+            
+            timer = Instant::now();
+            let fast_result = crate::verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
+            times.3.push(timer.elapsed());    
+            }
+        
+        
+        fn print_timer(implementation: &str, length: usize, iterations: u128,  timer: Timer) {
+            println!("{implementation} implementation with {length} length polynomials and corresponding setup"); 
+            
+            let setup_time: u128 = timer.0.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
+        
+            let mut total = setup_time;
+            println!("setup phase: \t\t{}ms", setup_time);
+            
+            let commit_time: u128 = timer.1.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
+            
+            let proof_gen_time: u128 = commit_time + timer.2.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
+            total += proof_gen_time;
+            println!("query phase: \t\t{}ms", proof_gen_time);
+            
+            let verification_time: u128 = timer.3.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
+            total += verification_time;
+            println!("verification phase: \t{}ms", verification_time);
+            
+            println!("\n");
+        }
+            
+        println!(); 
+        for i in [5, 10, 20, 50] {
+            let poly = crate::generate_randomness(i.clone());
+                
+            let mut timer = Timer(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..20 {
+                benchmark_single_iteration::<FastCurve>(&poly, &mut timer);
+            }
+            print_timer("fast", i, 20, timer);
+        }     
+        
+        println!("\n");
+        for i in [5, 10, 20, 50] {
+            let poly = crate::generate_randomness(i.clone());
+            let mut timer = Timer(Vec::new(), Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..5 {
+                benchmark_single_iteration::<SpecCurve>(&poly, &mut timer);
+            }
+            print_timer("specification", i, 5, timer);
+        }     
+    }
 }
