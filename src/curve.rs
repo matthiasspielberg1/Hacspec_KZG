@@ -187,7 +187,7 @@ impl Curve for FastCurve {
     fn fiat_shamir_hash(z1: Self::G1, z2: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar {
         let mut hasher = std::hash::DefaultHasher::new();
         // the fast library only provides the tostring method for 
-        // extracting the value of the g1
+        
         z1.to_string().hash(&mut hasher);
         z2.to_string().hash(&mut hasher);
         n1.to_string().hash(&mut hasher);
@@ -204,13 +204,22 @@ impl Curve for FastCurve {
 mod test {
     use quickcheck_macros::quickcheck;
 
-    // use crate::curve::{Curve, SpecCurve};
+    use rand::random;
     use super::*;
 
-    #[quickcheck]
-    fn test_trait_scalar_from_literal(base: u128) -> bool {
+    // generates n random u128
+    // lets us avoid generating randomness directly in our kzg implementation
+    fn generate_randomness(n: usize) -> Vec<u128> {
+        let mut rand: Vec<u128> = Vec::with_capacity(n); 
 
-        
+        for _ in 0..n {
+            rand.push(random())
+    }
+    rand
+    }
+
+    #[quickcheck]
+    fn test_trait_scalar_from_literal(base: u128) -> bool { 
         let specscalar = SpecCurve::scalar_from_literal(&base);
         let fastscalar = FastCurve::scalar_from_literal(&base);
         
@@ -221,9 +230,7 @@ mod test {
     } 
     
     #[quickcheck]
-    fn test_trait_scalar_power(base: u128, exp: u128) -> bool {
-
-        
+    fn test_trait_scalar_power(base: u128, exp: u128) -> bool { 
         let specscalar = SpecCurve::scalar_from_literal(&base);
         let fastscalar = FastCurve::scalar_from_literal(&base);
         
@@ -238,135 +245,45 @@ mod test {
     } 
 
     #[quickcheck]
-    fn test_trait_commitment(scalar: u128, kj_literal: u128) -> bool {
+    fn test_trait_commitment(kj_literal: u128) -> bool {
         use std::collections::HashSet;
-        use std::time;
 
         
         let poly = vec![1, 12, 43, 8423790, 27983, 83, 89203, 12912987798231, 65];
         let degree = poly.len() + 2;
         
-        let mut random = crate::generate_randomness(poly.len() + 5);
+        // we use the same random values for both implemtations
+        let fast_random = generate_randomness(poly.len() + 5);
+        let spec_random = fast_random.clone();
 
+
+        // commiting to the fast implementation
+        let mut random = fast_random;
         let pk = crate::setup::<FastCurve>(degree as u128, &mut random);
         let mut set = HashSet::new();
         for i in poly.iter() {
             set.insert(FastCurve::scalar_from_literal(i)); 
-        }
+        } 
+        let (fast_commitment, _, _) = crate::commitzk(&pk, &set, &mut random);
+        let fast_commitment = blstrs::G1Affine::from(fast_commitment);
         
-        let fast_start = time::Instant::now();
-        let (commitment, phi, phi_hat) = crate::commitzk(&pk, &set, &mut random);
-        let kj = FastCurve::scalar_from_literal(&kj_literal); 
-        let (kj, witness, phi_hat_kj, pi_sj) = crate::queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random); 
-        let fast_result = crate::verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
-        let fast_time = fast_start.elapsed();
         
-        println!("fast implementation done in {}", fast_time.as_millis());
-        
-        let mut random = crate::generate_randomness(poly.len() + 5);
+        //commiting to the specification implementation
+        let mut random = spec_random;
         let pk = crate::setup::<SpecCurve>(degree as u128, &mut random);
         let mut set = HashSet::new();
         for i in poly.iter() {
             set.insert(SpecCurve::scalar_from_literal(i)); 
         }
-        let spec_start = time::Instant::now();
-        let (commitment, phi, phi_hat) = crate::commitzk(&pk, &set, &mut random);
-        let kj = SpecCurve::scalar_from_literal(&kj_literal); 
-        let (kj, witness, phi_hat_kj, pi_sj) = crate::queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random); 
-        let slow_result = crate::verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
-        let spec_time = spec_start.elapsed();
-        
-        println!("slow implementation done in {}", spec_time.as_secs());
-
-
-        let result = fast_result == slow_result;
-
-        println!("result: {result}");
-        result
-    }
-    
-    #[test]
-    fn benchmark() { 
-        use std::collections::HashSet;
-        use std::time::{Instant, Duration};
-        
-        struct Timer(Vec<Duration>, Vec<Duration>, Vec<Duration>, Vec<Duration>);
-
-
+        let (spec_commitment, _, _) = crate::commitzk(&pk, &set, &mut random); 
         
         
+        // since the bls implementations should be equivalent and we use the same randomness
+        // we expect the commitment to be the same
+        let (s_x, s_y, _) = spec_commitment; 
+        let x_eq = s_x.to_be_bytes() == fast_commitment.x().to_bytes_be();
+        let y_eq = s_y.to_be_bytes() == fast_commitment.y().to_bytes_be();
 
-        fn benchmark_single_iteration<T: Curve>(poly: &Vec<u128>, times: &mut Timer) {
-            let degree = poly.len() + 2; 
-            let mut random = crate::generate_randomness(poly.len() + 6);
-             
-            let kj_literal = random.pop().expect("not enough randomness provided"); 
-
-            let mut timer = Instant::now();
-            let pk = crate::setup::<T>(degree as u128, &mut random);
-            times.0.push(timer.elapsed());
-
-            let mut set = HashSet::new();
-            for i in poly.iter() {
-                set.insert(T::scalar_from_literal(i)); 
-            }
-            
-            timer = Instant::now();
-            let (commitment, phi, phi_hat) = crate::commitzk(&pk, &set, &mut random);
-            times.1.push(timer.elapsed());
-
-            let kj = T::scalar_from_literal(&kj_literal); 
-
-            timer = Instant::now();
-            let (kj, witness, phi_hat_kj, pi_sj) = crate::queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random); 
-            times.2.push(timer.elapsed());
-            
-            timer = Instant::now();
-            let fast_result = crate::verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
-            times.3.push(timer.elapsed());    
-            }
-        
-        
-        fn print_timer(implementation: &str, length: usize, iterations: u128,  timer: Timer) {
-            println!("{implementation} implementation with {length} length polynomials and corresponding setup"); 
-            
-            let setup_time: u128 = timer.0.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
-        
-            let mut total = setup_time;
-            println!("setup phase: \t\t{}ms", setup_time);
-            
-            let commit_time: u128 = timer.1.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
-            
-            let proof_gen_time: u128 = commit_time + timer.2.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
-            total += proof_gen_time;
-            println!("query phase: \t\t{}ms", proof_gen_time);
-            
-            let verification_time: u128 = timer.3.iter().map(|x| {x.as_millis()}).sum::<u128>() / iterations;
-            total += verification_time;
-            println!("verification phase: \t{}ms", verification_time);
-            
-            println!("\n");
-        }
-            
-        println!(); 
-        for i in [5, 10, 20, 50] {
-            let poly = crate::generate_randomness(i.clone());
-                
-            let mut timer = Timer(Vec::new(), Vec::new(), Vec::new(), Vec::new());
-            for _ in 0..20 {
-                benchmark_single_iteration::<FastCurve>(&poly, &mut timer);
-            }
-            print_timer("fast", i, 20, timer);
-        }     
-        
-        println!("\n");
-        for i in [5, 10, 20, 50] {
-            let poly = crate::generate_randomness(i.clone());
-            let mut timer = Timer(Vec::new(), Vec::new(), Vec::new(), Vec::new());
-            for _ in 0..5 {
-                benchmark_single_iteration::<SpecCurve>(&poly, &mut timer);
-            }
-            print_timer("specification", i, 5, timer);
-        }     
-    }
+        x_eq && y_eq
+    }    
 }
