@@ -1,11 +1,40 @@
 #![allow(unused_variables)]
 #![allow(dead_code)] 
 pub mod curve;
-mod bigint;
 use curve::Curve;
 use hacspec_lib::*;
+use hacspec_bls12_381::*;
 use std::collections::HashSet;
 
+
+fn commit_poly<T: Curve>(polynomial: &Vec<T::Scalar> , pk: &Vec<T::G1>, generator: T::G1) -> T::G1 {
+    // commit to the original polynomial
+    let mut commitment = T::g1mul(&T::scalar_from_literal(&0), &generator);
+    
+    let difference = pk.len() - polynomial.len();
+    for i in 0..polynomial.len() { 
+        let power_index = difference + i;
+        
+        let current= T::g1mul(&polynomial[i], &pk[power_index]);
+        commitment = T::g1add(&commitment, &current);
+    };
+    commitment
+}
+
+
+#[hax_lib::requires(pk.len() >= polynomial.len())]
+fn commit_poly_verifiable(polynomial: &Vec<Scalar> , pk: &Vec<G1>, generator: G1) -> G1 {
+    let mut commitment = g1mul(Scalar::from_literal(0), generator);
+    
+    let difference = pk.len() - polynomial.len();
+    for i in 0..polynomial.len() { 
+        let power_index = difference + i;
+        
+        let current = g1mul(polynomial[i], pk[power_index]);
+        commitment = g1add(commitment, current);
+    };
+    commitment
+}
 
 // applies the polynomial to input x
 fn apply<T: Curve>(polynomial: &Vec<T::Scalar>, x: &T::Scalar) -> T::Scalar {
@@ -67,21 +96,6 @@ fn create_psi<T: Curve>(f: &Vec<T::Scalar>, f_x0: T::Scalar, x0: T::Scalar) -> V
 }
 
 
-fn commit_poly<T: Curve>(polynomial: &Vec<T::Scalar> , pk: &Vec<T::G1>, generator: T::G1) -> T::G1 {
-
-    // commit to the original polynomial
-    let mut commitment = T::g1_mul(&T::scalar_from_literal(&0), &generator);
-    
-    let difference = pk.len() - polynomial.len();
-    for i in 0..polynomial.len() { 
-        let power_index = difference + i;
-        
-        let current= T::g1_mul(&polynomial[i], &pk[power_index]);
-        commitment = T::g1_add(&commitment, &current);
-    };
-    commitment
-}
-
 pub fn setup<T: Curve>(degree: u128, random: &mut Vec<u128>) -> Pk<T> {
 
     let rand = random.pop().expect("not enough randomness provided");
@@ -93,17 +107,17 @@ pub fn setup<T: Curve>(degree: u128, random: &mut Vec<u128>) -> Pk<T> {
     // generate h from some random lambda
     
     let rand = random.pop().expect("not enough randomness provided");
-    let h = T::g1_mul(&T::scalar_from_literal(&rand), &T::g1());
+    let h = T::g1mul(&T::scalar_from_literal(&rand), &T::g1());
 
     for i in 0..degree + 1 {
         let power: u128 = (degree - i).into();
         let alpha_power= T::scalar_pow(&alpha, &power);
 
-        setup_g1.push(T::g1_mul(&alpha_power, &T::g1()));
-        setup_h1.push(T::g1_mul(&alpha_power, &h));
+        setup_g1.push(T::g1mul(&alpha_power, &T::g1()));
+        setup_h1.push(T::g1mul(&alpha_power, &h));
     };
     
-    let alpha_g2 = T::g2_mul(&alpha, &T::g2());
+    let alpha_g2 = T::g2mul(&alpha, &T::g2());
 
     Pk{g_powers : setup_g1, h_powers : setup_h1, h1 : h, alpha_g2}
 }
@@ -137,7 +151,7 @@ pub fn commitzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, random: &mut Vec
     let hiding_commitment = commit_poly::<T>(&phi_hat, &pk.h_powers, pk.h1);
 
     
-    (T::g1_add(&commitment, &hiding_commitment), phi, phi_hat)
+    (T::g1add(&commitment, &hiding_commitment), phi, phi_hat)
 }
 
 
@@ -154,7 +168,7 @@ fn create_witness<T: Curve>(phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, i: T
 
         
     let mut witness = commit_poly::<T>(&psi, &pk.g_powers, T::g1());
-    witness = T::g1_add(&witness, &commit_poly::<T>(&psi_hat, &pk.h_powers, pk.h1));
+    witness = T::g1add(&witness, &commit_poly::<T>(&psi_hat, &pk.h_powers, pk.h1));
 
     
     return (i, phi_i, phi_hat_i, witness);
@@ -171,11 +185,11 @@ pub fn queryzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, phi: &Vec<T::Scal
         return (kj, witness, Some(phi_hat_kj), None);
     };
 
-    let p1 = T::g1_mul(&phi_kj, &T::g1());
-    let p2 = T::g1_mul(&phi_hat_kj, &pk.h1);
+    let p1 = T::g1mul(&phi_kj, &T::g1());
+    let p2 = T::g1mul(&phi_hat_kj, &pk.h1);
     
     
-    let proof = T::g1_add(&p1, &p2);
+    let proof = T::g1add(&p1, &p2);
 
     let (n1, n2, s1, s2) = schnorr_proof(pk, phi_kj, phi_hat_kj, random);
 
@@ -198,12 +212,12 @@ kj: T::Scalar, witness: T::G1, phi_hat_kj: Option<T::Scalar>) -> bool {
         return false
     } 
 
-    let zero = T::g1_mul(&T::scalar_from_literal(&0), &T::g1());
+    let zero = T::g1mul(&T::scalar_from_literal(&0), &T::g1());
 
     let (proof, n1, n2, s1, s2) = pi_sj.expect("invalid state");
 
     // commiter lied, phi(kj) is in their set
-    if n1 == T::g1_mul(&s1, &T::g1()) {
+    if n1 == T::g1mul(&s1, &T::g1()) {
 		return false
 	}
     
@@ -213,8 +227,8 @@ kj: T::Scalar, witness: T::G1, phi_hat_kj: Option<T::Scalar>) -> bool {
     }
 
 
-    let left = T::pairing(&witness, &T::g2_sub(&pk.alpha_g2, &T::g2_mul(&kj, &T::g2())));
-    let right = T::pairing(&T::g1_sub(&commitment, &proof), &T::g2());
+    let left = T::pairing(&witness, &T::g2sub(&pk.alpha_g2, &T::g2mul(&kj, &T::g2())));
+    let right = T::pairing(&T::g1sub(&commitment, &proof), &T::g2());
     
     left == right
 }
@@ -222,11 +236,11 @@ kj: T::Scalar, witness: T::G1, phi_hat_kj: Option<T::Scalar>) -> bool {
 
 fn verifyeval<T: Curve>(pk: &Pk<T>, commitment: T::G1, kj: T::Scalar, phi_kj: T::Scalar, phi_hat_kj: T::Scalar, witness: T::G1) -> bool {
     
-    let left = T::pairing(&witness, &T::g2_sub(&pk.alpha_g2, &T::g2_mul(&kj, &T::g2())));
+    let left = T::pairing(&witness, &T::g2sub(&pk.alpha_g2, &T::g2mul(&kj, &T::g2())));
 
-    let ys = T::g1_add(&T::g1_mul(&phi_kj, &T::g1()), &T::g1_mul(&phi_hat_kj, &pk.h1));
+    let ys = T::g1add(&T::g1mul(&phi_kj, &T::g1()), &T::g1mul(&phi_hat_kj, &pk.h1));
 
-    let right = T::pairing(&T::g1_sub(&commitment, &ys), &T::g2());
+    let right = T::pairing(&T::g1sub(&commitment, &ys), &T::g2());
     
     left == right
 }
@@ -238,13 +252,13 @@ fn schnorr_proof<T: Curve>(pk: &Pk<T>, a: T::Scalar, b: T::Scalar, random: &mut 
     let r1 = T::scalar_from_literal(&r1); 
     let r2 = T::scalar_from_literal(&r2); 
 
-    let n1 = T::g1_mul(&r1, &T::g1());
-    let n2 = T::g1_mul(&r2, &pk.h1);
+    let n1 = T::g1mul(&r1, &T::g1());
+    let n2 = T::g1mul(&r2, &pk.h1);
     
-    let z1 = T::g1_mul(&a, &T::g1());
-    let z2 = T::g1_mul(&b, &pk.h1);
+    let z1 = T::g1mul(&a, &T::g1());
+    let z2 = T::g1mul(&b, &pk.h1);
     
-    let z = T::g1_add(&z1, &z2);
+    let z = T::g1add(&z1, &z2);
 
     let c = T::fiat_shamir_hash(z, n1, n2, pk.h1);
 
@@ -258,15 +272,15 @@ fn schnorr_verify<T: Curve>(pk: &Pk<T>, z: T::G1, n1: T::G1, n2: T::G1, s1: T::S
     
     let c = T::fiat_shamir_hash(z, n1, n2, pk.h1);
 
-    let left  = T::g1_add(&n1, &n2);
+    let left  = T::g1add(&n1, &n2);
 
-    let s1 = T::g1_mul(&s1, &T::g1());
+    let s1 = T::g1mul(&s1, &T::g1());
 
-    let s2 = T::g1_mul(&s2, &pk.h1);
+    let s2 = T::g1mul(&s2, &pk.h1);
     
-    let z = T::g1_mul(&c, &z);
+    let z = T::g1mul(&c, &z);
 
-    let right = T::g1_add(&T::g1_add(&s1, &s2), &z);
+    let right = T::g1add(&T::g1add(&s1, &s2), &z);
 
     left == right
 }
@@ -305,10 +319,10 @@ mod tests {
         let a = Curve::scalar_from_literal(&a);
         let b = Curve::scalar_from_literal(&b);
             
-        let p1 = Curve::g1_mul(&a, &Curve::g1());
-        let p2 = Curve::g1_mul(&b, &pk.h1);
+        let p1 = Curve::g1mul(&a, &Curve::g1());
+        let p2 = Curve::g1mul(&b, &pk.h1);
         
-        let proof = Curve::g1_add(&p1, &p2);
+        let proof = Curve::g1add(&p1, &p2);
 
             
         let (n1, n2, s1, s2) = schnorr_proof(&pk, a, b, &mut random);
@@ -330,10 +344,10 @@ mod tests {
 		let a = Curve::scalar_from_literal(&a);
 		let b = Curve::scalar_from_literal(&b);
 			
-		let p1 = Curve::g1_mul(&a, &Curve::g1());
-		let p2 = Curve::g1_mul(&b, &pk.h1);
+		let p1 = Curve::g1mul(&a, &Curve::g1());
+		let p2 = Curve::g1mul(&b, &pk.h1);
 		
-		let proof = Curve::g1_add(&p1, &p2);
+		let proof = Curve::g1add(&p1, &p2);
 
 		// fake knowledge of a by simulating guessing it
 		let a = Curve::scalar_from_literal(&random.pop().expect("not enough randomness provided"));
@@ -359,14 +373,14 @@ mod tests {
 		let a = Curve::scalar_from_literal(&a);
 		let b = Curve::scalar_from_literal(&b);
 			
-		let p1 = Curve::g1_mul(&a, &Curve::g1());
-		let p2 = Curve::g1_mul(&b, &pk.h1);
+		let p1 = Curve::g1mul(&a, &Curve::g1());
+		let p2 = Curve::g1mul(&b, &pk.h1);
 		
-		let proof = Curve::g1_add(&p1, &p2);
+		let proof = Curve::g1add(&p1, &p2);
 
 		let (n1, n2, s1, s2) = schnorr_proof(&pk, a, b, &mut random);
 		
-		n1 == Curve::g1_mul(&s1, &Curve::g1())
+		n1 == Curve::g1mul(&s1, &Curve::g1())
 	}
     
 
@@ -446,7 +460,7 @@ mod tests {
             forged_poly.push(Curve::scalar_from_literal(&random.pop().expect("not enough randomness provided")));
         }
         
-        let witness = Curve::g1_mul(&apply::<Curve>(&forged_poly, &kj), &Curve::g1());
+        let witness = Curve::g1mul(&apply::<Curve>(&forged_poly, &kj), &Curve::g1());
 
 
         let result = verifyzk(&pk, commitment, pi_sj, kj, witness, phi_hat_kj);
@@ -485,9 +499,9 @@ mod tests {
 		let phi_kj =  apply::<Curve>(&phi, &kj);
 		let phi_hat_kj =  apply::<Curve>(&phi_hat, &kj);
 
-		let p1 = Curve::g1_mul(&phi_kj, &Curve::g1());
-		let p2 = Curve::g1_mul(&phi_hat_kj, &pk.h1);
-		let proof = Curve::g1_add(&p1, &p2);
+		let p1 = Curve::g1mul(&phi_kj, &Curve::g1());
+		let p2 = Curve::g1mul(&phi_hat_kj, &pk.h1);
+		let proof = Curve::g1add(&p1, &p2);
 
 
 		let (n1, n2, s1, s2) = schnorr_proof(&pk, phi_kj, phi_hat_kj, &mut random);

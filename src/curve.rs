@@ -34,14 +34,14 @@ pub trait Curve {
     
     fn scalar_pow(x: &Self::Scalar, y: &u128) -> Self::Scalar;
 
-    fn g1_mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1;
-    fn g2_mul(x: &Self::Scalar, y: &Self::G2) -> Self::G2;
+    fn g1mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1;
+    fn g2mul(x: &Self::Scalar, y: &Self::G2) -> Self::G2;
 
-    fn g1_add(x: &Self::G1, y: &Self::G1) -> Self::G1;
-    fn g2_add(x: &Self::G2, y: &Self::G2) -> Self::G2;
+    fn g1add(x: &Self::G1, y: &Self::G1) -> Self::G1;
+    fn g2add(x: &Self::G2, y: &Self::G2) -> Self::G2;
 
-    fn g1_sub(x: &Self::G1, y: &Self::G1) -> Self::G1;
-    fn g2_sub(x: &Self::G2, y: &Self::G2) -> Self::G2;
+    fn g1sub(x: &Self::G1, y: &Self::G1) -> Self::G1;
+    fn g2sub(x: &Self::G2, y: &Self::G2) -> Self::G2;
     
     fn g1() -> Self::G1;
     fn g2() -> Self::G2;
@@ -86,22 +86,22 @@ impl Curve for SpecCurve {
     fn scalar_pow(x: &Self::Scalar, y: &u128) -> Self::Scalar {
         x.pow(y.clone())
     }
-    fn g1_mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1 {
+    fn g1mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1 {
         spec::g1mul(x.clone(), y.clone())    
     }
-    fn g2_mul(x: &Self::Scalar, y: &Self::G2) -> Self::G2 {
+    fn g2mul(x: &Self::Scalar, y: &Self::G2) -> Self::G2 {
         spec::g2mul(x.clone(), y.clone())
     }
-    fn g1_add(x: &Self::G1, y: &Self::G1) -> Self::G1 {
+    fn g1add(x: &Self::G1, y: &Self::G1) -> Self::G1 {
         spec::g1add(x.clone(), y.clone())
     }
-    fn g2_add(x: &Self::G2, y: &Self::G2) -> Self::G2 {
+    fn g2add(x: &Self::G2, y: &Self::G2) -> Self::G2 {
         spec::g2add(x.clone(), y.clone()) 
     }
-    fn g1_sub(x: &Self::G1, y: &Self::G1) -> Self::G1 {
+    fn g1sub(x: &Self::G1, y: &Self::G1) -> Self::G1 {
         spec::g1add(x.clone(), spec::g1neg(y.clone()))
     }
-    fn g2_sub(x: &Self::G2, y: &Self::G2) -> Self::G2 {
+    fn g2sub(x: &Self::G2, y: &Self::G2) -> Self::G2 {
         spec::g2add(x.clone(), spec::g2neg(y.clone()))
     }
     fn g1() -> Self::G1 {
@@ -153,22 +153,22 @@ impl Curve for FastCurve {
         let exp = vec![small_end, big_end];
         x.pow(exp)
     }
-    fn g1_mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1 {
+    fn g1mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1 {
         y.mul(x)
     }
-    fn g2_mul(x: &Self::Scalar, y: &Self::G2) -> Self::G2 {
+    fn g2mul(x: &Self::Scalar, y: &Self::G2) -> Self::G2 {
         y.mul(x)
     }
-    fn g1_add(x: &Self::G1, y: &Self::G1) -> Self::G1 {
+    fn g1add(x: &Self::G1, y: &Self::G1) -> Self::G1 {
         x + y
     }
-    fn g2_add(x: &Self::G2, y: &Self::G2) -> Self::G2 {
+    fn g2add(x: &Self::G2, y: &Self::G2) -> Self::G2 {
         x + y
     }
-    fn g1_sub(x: &Self::G1, y: &Self::G1) -> Self::G1 {
+    fn g1sub(x: &Self::G1, y: &Self::G1) -> Self::G1 {
         x - y
     }
-    fn g2_sub(x: &Self::G2, y: &Self::G2) -> Self::G2 {
+    fn g2sub(x: &Self::G2, y: &Self::G2) -> Self::G2 {
         x - y
     }
     fn g1() -> Self::G1 {

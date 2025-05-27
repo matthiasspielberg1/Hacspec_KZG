@@ -75,7 +75,7 @@ fn benchmark_single_iteration<T: Curve>(poly: &Vec<u128>, times: &mut Timer) {
 
 #[test]
 fn benchmark() {   
-    println!(); 
+    println!();  
     for i in [5, 10, 20, 50, 400] {
         let poly = generate_randomness(i.clone());
             
