@@ -1,10 +1,11 @@
-use std::{hash::{Hash, Hasher}, ops::{Add, Mul, Sub}};
+use std::ops::{Add, Mul, Sub};
+use std::hash::{Hash, DefaultHasher, Hasher};
 
-mod Spec {
+mod spec {
    pub use hacspec_bls12_381::*; 
    
 }
-mod Sha {
+mod sha {
     pub use hacspec_sha256::*;
 }
 use blstrs;
@@ -25,7 +26,7 @@ pub trait Curve {
         //hash is needed so we can construct a set
         //using hashing since fast implemenatation does 
         //not implement ordering
-        std::hash::Hash;
+        Hash;
     type Element:
         Eq;
 
@@ -47,13 +48,12 @@ pub trait Curve {
     
     fn pairing(x: &Self::G1, y: &Self::G2) -> Self::Element;
 
-    fn fiat_shamir_hash(z1: Self::G1, z2: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar;
-    
+    fn fiat_shamir_hash(z: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar; 
 }
 
 
 
-fn g1_to_byte_seq(g: Spec::G1) -> hacspec_lib::ByteSeq {
+fn g1_to_byte_seq(g: spec::G1) -> hacspec_lib::ByteSeq {
     let (x, y, inf) = g;
     let x_bytes = x.to_byte_seq_be();  
     let result= x_bytes.concat(&y.to_byte_seq_be());
@@ -75,62 +75,61 @@ pub struct SpecCurve;
 
 impl Curve for SpecCurve {
 
-    type G1 = Spec::G1;
-    type G2 = Spec::G2;
-    type Scalar = Spec::Scalar;
-    type Element = Spec::Fp12;
+    type G1 = spec::G1;
+    type G2 = spec::G2;
+    type Scalar = spec::Scalar;
+    type Element = spec::Fp12;
 
     fn scalar_from_literal(x: &u128) -> Self::Scalar {
-        Spec::Scalar::from_literal(x.clone()) 
+        spec::Scalar::from_literal(x.clone()) 
     }
     fn scalar_pow(x: &Self::Scalar, y: &u128) -> Self::Scalar {
         x.pow(y.clone())
     }
     fn g1_mul(x: &Self::Scalar, y: &Self::G1) -> Self::G1 {
-        Spec::g1mul(x.clone(), y.clone())    
+        spec::g1mul(x.clone(), y.clone())    
     }
     fn g2_mul(x: &Self::Scalar, y: &Self::G2) -> Self::G2 {
-        Spec::g2mul(x.clone(), y.clone())
+        spec::g2mul(x.clone(), y.clone())
     }
     fn g1_add(x: &Self::G1, y: &Self::G1) -> Self::G1 {
-        Spec::g1add(x.clone(), y.clone())
+        spec::g1add(x.clone(), y.clone())
     }
     fn g2_add(x: &Self::G2, y: &Self::G2) -> Self::G2 {
-        Spec::g2add(x.clone(), y.clone()) 
+        spec::g2add(x.clone(), y.clone()) 
     }
     fn g1_sub(x: &Self::G1, y: &Self::G1) -> Self::G1 {
-        Spec::g1add(x.clone(), Spec::g1neg(y.clone()))
+        spec::g1add(x.clone(), spec::g1neg(y.clone()))
     }
     fn g2_sub(x: &Self::G2, y: &Self::G2) -> Self::G2 {
-        Spec::g2add(x.clone(), Spec::g2neg(y.clone()))
+        spec::g2add(x.clone(), spec::g2neg(y.clone()))
     }
     fn g1() -> Self::G1 {
-    (Spec::Fp::from_hex("17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"),
-     Spec::Fp::from_hex("08b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1"), false)
+    (spec::Fp::from_hex("17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"),
+     spec::Fp::from_hex("08b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1"), false)
     }
     fn g2() -> Self::G2 {
-    ((Spec::Fp::from_hex("24aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8"),
-      Spec::Fp::from_hex("13e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e")),
-     (Spec::Fp::from_hex("0ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801"),
-      Spec::Fp::from_hex("0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be")), false)
+    ((spec::Fp::from_hex("24aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8"),
+      spec::Fp::from_hex("13e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e")),
+     (spec::Fp::from_hex("0ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801"),
+      spec::Fp::from_hex("0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be")), false)
     }
     fn pairing(x: &Self::G1, y: &Self::G2) -> Self::Element {
-        Spec::pairing(x.clone(), y.clone())
+        spec::pairing(x.clone(), y.clone())
     }
     
-    fn fiat_shamir_hash(z1: Self::G1, z2: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar {
+    fn fiat_shamir_hash(z: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar {
         let g = g1_to_byte_seq(Self::g1());
         let h = g1_to_byte_seq(h);
-        let z1 = g1_to_byte_seq(z1);
-        let z2 = g1_to_byte_seq(z2);
+        let z = g1_to_byte_seq(z);
         let n1 = g1_to_byte_seq(n1);
         let n2 = g1_to_byte_seq(n2);
 
-        let bytes = g.concat(&h).concat(&z1).concat(&z2).concat(&n1).concat(&n2);
+        let bytes = g.concat(&h).concat(&z).concat(&n1).concat(&n2);
         
-        let digest = Sha::hash(&bytes);
+        let digest = sha::hash(&bytes);
 
-        Spec::Scalar::from_byte_seq_be(&digest)
+        spec::Scalar::from_byte_seq_be(&digest)
     } 
 }
 
@@ -184,12 +183,11 @@ impl Curve for FastCurve {
         blstrs::pairing(&left, &right)
     }
     
-    fn fiat_shamir_hash(z1: Self::G1, z2: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar {
-        let mut hasher = std::hash::DefaultHasher::new();
+    fn fiat_shamir_hash(z: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar {
+        let mut hasher = DefaultHasher::new();
         // the fast library only provides the tostring method for 
         
-        z1.to_string().hash(&mut hasher);
-        z2.to_string().hash(&mut hasher);
+        z.to_string().hash(&mut hasher);
         n1.to_string().hash(&mut hasher);
         n2.to_string().hash(&mut hasher);
         h.to_string().hash(&mut hasher);

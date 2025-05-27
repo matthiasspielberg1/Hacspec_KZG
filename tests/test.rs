@@ -102,7 +102,7 @@ fn profile_blstrs() {
     // this value is discarded
     let mut timer = Timer(Vec::new(), Vec::new(), Vec::new(), Vec::new());
     
-    let degree = 10000;
+    let degree = 10;
     let poly = generate_randomness(degree);
     benchmark_single_iteration::<FastCurve>(&poly.clone(), &mut timer);
     print_timer("blstrs", degree, 1, timer)
