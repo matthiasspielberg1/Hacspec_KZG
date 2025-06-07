@@ -476,6 +476,123 @@ fn create_witness<T: Curve>(phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, i: T
 
 
 
+mod verifiable {
+    #![allow(dead_code)]
+    use hacspec_bls12_381::*;
+
+    fn g1sub(x: G1, y: G1) -> G1 {
+        g1add(x, g1neg(y))
+    }
+
+    fn g2sub(x: G2, y: G2) -> G2 {
+        g2add(x, g2neg(y))
+    }
+
+    fn g1() -> G1 {
+    (Fp::from_hex("17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"),
+     Fp::from_hex("08b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1"), false)
+    }
+    fn g2() -> G2 {
+    ((Fp::from_hex("24aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8"),
+      Fp::from_hex("13e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e")),
+     (Fp::from_hex("0ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801"),
+      Fp::from_hex("0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be")), false)
+    }
+    
+    struct PkVerifiable {    
+        g_powers: Vec<G1>,
+        h_powers: Vec<G1>,
+        h1: G1,
+        alpha_g2: G2
+    }
+    
+
+    fn commit_poly_verifiable(polynomial: &Vec<hacspec_bls12_381::Scalar> , pk: &Vec<hacspec_bls12_381::G1>, generator: hacspec_bls12_381::G1) -> hacspec_bls12_381::G1 {
+        // commit to the original polynomial
+        let mut commitment = hacspec_bls12_381::g1mul(hacspec_bls12_381::Scalar::from_literal(0), generator);
+        
+        let difference = pk.len() - polynomial.len();
+        for i in 0..polynomial.len() { 
+            let power_index = difference + i;
+            
+            let current= hacspec_bls12_381::g1mul(polynomial[i], pk[power_index]);
+            commitment = hacspec_bls12_381::g1add(commitment, current);
+        };
+        commitment
+    }
+
+    // applies the polynomial to input x
+    fn apply_verifiable(polynomial: &Vec<hacspec_bls12_381::Scalar>, x: &hacspec_bls12_381::Scalar) -> hacspec_bls12_381::Scalar {
+        let mut result= hacspec_bls12_381::Scalar::from_literal(0);
+        
+        
+        for i in 0..polynomial.len() {
+            let term = polynomial[polynomial.len()-1-i] * x.pow(i as u128);
+            result = result + term;
+        }
+
+        result
+    }
+
+    fn verifyeval(pk: &PkVerifiable, commitment: G1, kj: Scalar, phi_kj: Scalar, phi_hat_kj: Scalar, witness: G1) -> bool {
+        
+        let left = pairing(witness, g2sub(pk.alpha_g2, g2mul(kj, g2())));
+
+        let ys = g1add(g1mul(phi_kj, g1()), g1mul(phi_hat_kj, pk.h1));
+
+        let right = pairing(g1sub(commitment, ys), g2());
+        
+        left == right
+    }
+    
+    fn g1_to_byte_seq(g: G1) -> hacspec_lib::ByteSeq {
+        let (x, y, inf) = g;
+        let x_bytes = x.to_byte_seq_be();  
+        let result= x_bytes.concat(&y.to_byte_seq_be());
+        
+        let mut inf_bytes = hacspec_lib::U8::zero();
+        
+        if inf {
+            inf_bytes = hacspec_lib::U8::one();
+        }
+        
+        result.push(&inf_bytes)
+    }
+
+    fn fiat_shamir_hash_verifiable(z: G1, n1: G1, n2: G1, h: G1) -> Scalar {
+        let g = g1_to_byte_seq(g1());
+        let h = g1_to_byte_seq(h);
+        let z = g1_to_byte_seq(z);
+        let n1 = g1_to_byte_seq(n1);
+        let n2 = g1_to_byte_seq(n2);
+
+        let bytes = g.concat(&h).concat(&z).concat(&n1).concat(&n2);
+        
+        let digest = hacspec_sha256::hash(&bytes);
+
+        Scalar::from_byte_seq_be(&digest)
+    } 
+
+    fn schnorr_verify(pk: &PkVerifiable, z: G1, n1: G1, n2: G1, s1: Scalar, s2: Scalar) -> bool {
+        
+        let c = fiat_shamir_hash_verifiable(z, n1, n2, pk.h1);
+
+        let left  = g1add(n1, n2);
+
+        let s1 = g1mul(s1, g1());
+
+        let s2 = g1mul(s2, pk.h1);
+        
+        let z = g1mul(c, z);
+
+        let right = g1add(g1add(s1, s2), z);
+
+        left == right
+    }
+
+
+}
+
 #[cfg(test)]
 mod tests {
     use quickcheck_macros::quickcheck;
