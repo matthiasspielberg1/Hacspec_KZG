@@ -122,7 +122,7 @@ use std::collections::HashSet;
 /// * `g_powers` - Powers of generator g: [g^(α^d), g^(α^(d-1)), ..., g^α, g]
 /// * `h_powers` - Powers of hiding generator h: [h^(α^d), h^(α^(d-1)), ..., h^α, h]  
 /// * `h1` - The hiding generator h
-/// * `alpha_g2` - α·g2 in the G2 group for pairing verification
+/// * `alpha_g2` - g2^α in the G2 group for pairing verification
 pub struct Pk<T: Curve> {
     g_powers: Vec<T::G1>,
     h_powers: Vec<T::G1>,
@@ -507,23 +507,24 @@ mod verifiable {
     }
     
 
-    fn commit_poly_verifiable(polynomial: &Vec<hacspec_bls12_381::Scalar> , pk: &Vec<hacspec_bls12_381::G1>, generator: hacspec_bls12_381::G1) -> hacspec_bls12_381::G1 {
+    #[hax_lib::requires(pk.len() >= polynomial.len())]
+    fn commit_poly_verifiable(polynomial: &Vec<Scalar> , pk: &Vec<G1>, generator: G1) -> G1 {
         // commit to the original polynomial
-        let mut commitment = hacspec_bls12_381::g1mul(hacspec_bls12_381::Scalar::from_literal(0), generator);
+        let mut commitment = g1mul(Scalar::from_literal(0u128), generator);
         
         let difference = pk.len() - polynomial.len();
         for i in 0..polynomial.len() { 
             let power_index = difference + i;
             
-            let current= hacspec_bls12_381::g1mul(polynomial[i], pk[power_index]);
-            commitment = hacspec_bls12_381::g1add(commitment, current);
+            let current = g1mul(polynomial[i], pk[power_index]);
+            commitment = g1add(commitment, current);
         };
         commitment
     }
 
     // applies the polynomial to input x
-    fn apply_verifiable(polynomial: &Vec<hacspec_bls12_381::Scalar>, x: &hacspec_bls12_381::Scalar) -> hacspec_bls12_381::Scalar {
-        let mut result= hacspec_bls12_381::Scalar::from_literal(0);
+    fn apply_verifiable(polynomial: &Vec<Scalar>, x: &Scalar) -> Scalar {
+        let mut result= Scalar::from_literal(0u128);
         
         
         for i in 0..polynomial.len() {
@@ -534,7 +535,7 @@ mod verifiable {
         result
     }
 
-    fn verifyeval(pk: &PkVerifiable, commitment: G1, kj: Scalar, phi_kj: Scalar, phi_hat_kj: Scalar, witness: G1) -> bool {
+    fn verifyeval_verifiable(pk: &PkVerifiable, commitment: G1, kj: Scalar, phi_kj: Scalar, phi_hat_kj: Scalar, witness: G1) -> bool {
         
         let left = pairing(witness, g2sub(pk.alpha_g2, g2mul(kj, g2())));
 
@@ -545,7 +546,7 @@ mod verifiable {
         left == right
     }
     
-    fn g1_to_byte_seq(g: G1) -> hacspec_lib::ByteSeq {
+    fn g1_to_byte_seq_verifiable(g: G1) -> hacspec_lib::ByteSeq {
         let (x, y, inf) = g;
         let x_bytes = x.to_byte_seq_be();  
         let result= x_bytes.concat(&y.to_byte_seq_be());
@@ -560,11 +561,11 @@ mod verifiable {
     }
 
     fn fiat_shamir_hash_verifiable(z: G1, n1: G1, n2: G1, h: G1) -> Scalar {
-        let g = g1_to_byte_seq(g1());
-        let h = g1_to_byte_seq(h);
-        let z = g1_to_byte_seq(z);
-        let n1 = g1_to_byte_seq(n1);
-        let n2 = g1_to_byte_seq(n2);
+        let g = g1_to_byte_seq_verifiable(g1());
+        let h = g1_to_byte_seq_verifiable(h);
+        let z = g1_to_byte_seq_verifiable(z);
+        let n1 = g1_to_byte_seq_verifiable(n1);
+        let n2 = g1_to_byte_seq_verifiable(n2);
 
         let bytes = g.concat(&h).concat(&z).concat(&n1).concat(&n2);
         
@@ -573,7 +574,7 @@ mod verifiable {
         Scalar::from_byte_seq_be(&digest)
     } 
 
-    fn schnorr_verify(pk: &PkVerifiable, z: G1, n1: G1, n2: G1, s1: Scalar, s2: Scalar) -> bool {
+    fn schnorr_verify_verifiable(pk: &PkVerifiable, z: G1, n1: G1, n2: G1, s1: Scalar, s2: Scalar) -> bool {
         
         let c = fiat_shamir_hash_verifiable(z, n1, n2, pk.h1);
 
