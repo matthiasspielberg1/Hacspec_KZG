@@ -3,9 +3,9 @@ name = "kzg"
 version = "0.1.0"
 edition = "2021"
 
+
 [dependencies]
 hacspec-bls12-381 = { path = "../hacspec/examples/bls12-381" }
-rand = "0.9"
 hacspec-sha256 = {path = "../hacspec/examples/sha256"}
 hacspec-lib = {path = "../hacspec/lib"}
 blstrs = { path = "../blstrs" }
@@ -13,5 +13,6 @@ group = "0.13"
 hax-lib = { git = "https://github.com/hacspec/hax", version = "0.3.0" }
 
 [dev-dependencies]
+rand = "0.9"
 quickcheck = "1.0"
 quickcheck_macros = "1.0"  # Optional, for the #[quickcheck] attribute

@@ -1,5 +1,36 @@
+//! # Elliptic Curve Abstraction for Zero-Knowledge Proofs
+//!
+//! This module provides a generic abstraction over pairing-friendly elliptic curves,
+//! allowing the kzg commitment scheme to use different curve implementations
+//! based on performance, security, and verification requirements.
+//!
+//! ## Curve Trait
+//!
+//! The `Curve` trait defines the essential operations needed for polynomial commitments
+//! and zero-knowledge proofs:
+//! - **Group operations**: Addition, subtraction, and scalar multiplication in G₁ and G₂
+//! - **Scalar arithmetic**: Field operations for polynomial coefficients
+//! - **Bilinear pairings**: Maps e(G₁, G₂) → Gₜ for verification equations
+//! - **Hash functions**: Fiat-Shamir transformation for non-interactive proofs
+//!
+//! ## Available Implementations
+//!
+//! ### SpecCurve
+//! A specification-friendly implementation using `hacspec_bls12_381` that prioritizes:
+//! - **Formal verification**: Compatible with formal analysis tools
+//! - **Auditability**: Clear, readable implementation for security reviews
+//! - **Specification compliance**: Follows standards precisely
+//!
+//! ### FastCurve  
+//! A performance-optimized implementation using `blstrs` that provides:
+//! - **High performance**: Optimized for production deployments
+//! - **Constant-time operations**: Resistance to timing attacks
+//! - **Assembly optimizations**: Hardware-accelerated operations where available
+//!
+
 use std::ops::{Add, Mul, Sub};
 use std::hash::{Hash, DefaultHasher, Hasher};
+use std::fmt::{Display, Debug};
 
 mod spec {
    pub use hacspec_bls12_381::*; 
@@ -13,10 +44,12 @@ use blstrs;
 pub trait Curve {
     type G1:
         Eq +
-        Copy;
+        Copy + 
+        Debug;
     type G2:
         Eq +
-        Copy;
+        Copy + 
+        Debug;
     type Scalar:
         Eq +
         Add<Output = Self::Scalar> +
@@ -26,9 +59,12 @@ pub trait Curve {
         //hash is needed so we can construct a set
         //using hashing since fast implemenatation does 
         //not implement ordering
-        Hash;
+        Hash + 
+        Display +
+        Debug;
     type Element:
-        Eq;
+        Eq + 
+        Debug;
 
     fn scalar_from_literal(x: &u128) -> Self::Scalar;
     
@@ -243,7 +279,7 @@ mod test {
     } 
 
     #[quickcheck]
-    fn test_trait_commitment(kj_literal: u128) -> bool {
+    fn test_trait_commitment() -> bool {
         use std::collections::HashSet;
 
         
