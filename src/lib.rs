@@ -475,7 +475,7 @@ fn create_witness<T: Curve>(phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, i: T
 }
 
 
-
+// VERIFiABLE FUNCTIONS USING HAX: 
 
 use hacspec_bls12_381::*;
 
