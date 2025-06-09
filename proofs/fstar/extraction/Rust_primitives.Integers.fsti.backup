@@ -1,0 +1,14 @@
+module Rust_primitives.Integers
+#set-options "--fuel 0 --ifuel 1 --z3rlimit 15"
+
+// Interface file to override hax's Rust_primitives.Integers with correct F* mappings
+type t_U128 = unit
+
+// Map int_t directly to FStar.UInt128.t for all types
+type int_t (t: Type0) : Type0 = FStar.UInt128.t
+
+// Map u128 directly to FStar.UInt128.t  
+type u128 = FStar.UInt128.t
+
+// Define mk_u128 to return FStar.UInt128.t
+val mk_u128 (x: nat{x < pow2 128}) : FStar.UInt128.t

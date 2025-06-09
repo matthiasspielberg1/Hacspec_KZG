@@ -476,9 +476,8 @@ fn create_witness<T: Curve>(phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, i: T
 
 
 
-mod verifiable {
-    #![allow(dead_code)]
-    use hacspec_bls12_381::*;
+
+use hacspec_bls12_381::*;
 
     fn g1sub(x: G1, y: G1) -> G1 {
         g1add(x, g1neg(y))
@@ -510,7 +509,7 @@ mod verifiable {
     #[hax_lib::requires(pk.len() >= polynomial.len())]
     fn commit_poly_verifiable(polynomial: &Vec<Scalar> , pk: &Vec<G1>, generator: G1) -> G1 {
         // commit to the original polynomial
-        let mut commitment = g1mul(Scalar::from_literal(0u128), generator);
+        let mut commitment = g1sub(generator, generator);
         
         let difference = pk.len() - polynomial.len();
         for i in 0..polynomial.len() { 
@@ -522,18 +521,6 @@ mod verifiable {
         commitment
     }
 
-    // applies the polynomial to input x
-    fn apply_verifiable(polynomial: &Vec<Scalar>, x: &Scalar) -> Scalar {
-        let mut result= Scalar::from_literal(0u128);
-        
-        
-        for i in 0..polynomial.len() {
-            let term = polynomial[polynomial.len()-1-i] * x.pow(i as u128);
-            result = result + term;
-        }
-
-        result
-    }
 
     fn verifyeval_verifiable(pk: &PkVerifiable, commitment: G1, kj: Scalar, phi_kj: Scalar, phi_hat_kj: Scalar, witness: G1) -> bool {
         
@@ -592,7 +579,7 @@ mod verifiable {
     }
 
 
-}
+
 
 #[cfg(test)]
 mod tests {

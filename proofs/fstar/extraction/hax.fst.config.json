@@ -1,0 +1,12 @@
+{
+  "fstar_exe": "fstar.exe",
+  "include_dirs": [
+    "/Users/matthiasspielberg/.hax/hacl_home/lib",
+    "",
+    "/Users/matthiasspielberg/.cargo/git/checkouts/hax-62040e6a6d802cb8/3c066cd/hax-lib/proof-libs/fstar/core",
+    "/Users/matthiasspielberg/.cargo/git/checkouts/hax-62040e6a6d802cb8/3c066cd/hax-lib/proof-libs/fstar/rust_primitives",
+    "/Users/matthiasspielberg/.cargo/git/checkouts/hax-62040e6a6d802cb8/3c066cd/hax-lib/proofs/fstar/extraction",
+    "/Users/matthiasspielberg/src/Hacspec_KZG/proofs/fstar/extraction",
+    "/Users/matthiasspielberg/src/hacspec/examples/bls12-381/proofs/fstar/extraction"
+  ]
+}

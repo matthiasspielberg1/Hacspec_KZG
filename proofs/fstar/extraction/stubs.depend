@@ -1,0 +1,12 @@
+# Dependency file for F* stubs
+Blstrs.G1.fst.checked:
+Blstrs.G2.fst.checked:
+Blstrs.Gt.fst.checked:
+Blstrs.Scalar.fst.checked:
+Ff.fst.checked:
+Group.fst.checked:
+Hacspec_bls12_381_.fst.checked:
+Hacspec_lib.Seq.fst.checked:
+Hacspec_lib.Traits.fst.checked:
+Hacspec_sha256.fst.checked:
+Secret_integers.fst.checked:
