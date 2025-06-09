@@ -1,4 +1,4 @@
-//! # Elliptic Curve Abstraction for Zero-Knowledge Proofs
+//! # Elliptic Curve Abstraction
 //!
 //! This module provides a generic abstraction over pairing-friendly elliptic curves,
 //! allowing the kzg commitment scheme to use different curve implementations
@@ -6,27 +6,16 @@
 //!
 //! ## Curve Trait
 //!
-//! The `Curve` trait defines the essential operations needed for polynomial commitments
-//! and zero-knowledge proofs:
-//! - **Group operations**: Addition, subtraction, and scalar multiplication in G₁ and G₂
-//! - **Scalar arithmetic**: Field operations for polynomial coefficients
-//! - **Bilinear pairings**: Maps e(G₁, G₂) → Gₜ for verification equations
-//! - **Hash functions**: Fiat-Shamir transformation for non-interactive proofs
-//!
-//! ## Available Implementations
+//! The `Curve` trait defines the essential operations needed for the kzg commitment scheme
+//! - **Group operations**: Group operations for G1, G2 and Scalars
+//! - **Bilinear pairings**: pairings e(G1, G2) → GT are used for protocol verification
+//! - **Hash functions**: Hash makes the Schnorr proof non-interactive
 //!
 //! ### SpecCurve
-//! A specification-friendly implementation using `hacspec_bls12_381` that prioritizes:
-//! - **Formal verification**: Compatible with formal analysis tools
-//! - **Auditability**: Clear, readable implementation for security reviews
-//! - **Specification compliance**: Follows standards precisely
+//! A specification-friendly implementation using `hacspec_bls12_381`
 //!
 //! ### FastCurve  
-//! A performance-optimized implementation using `blstrs` that provides:
-//! - **High performance**: Optimized for production deployments
-//! - **Constant-time operations**: Resistance to timing attacks
-//! - **Assembly optimizations**: Hardware-accelerated operations where available
-//!
+//! A performance-optimized implementation using `blstrs`
 
 use std::ops::{Add, Mul, Sub};
 use std::hash::{Hash, DefaultHasher, Hasher};
@@ -62,7 +51,7 @@ pub trait Curve {
         Hash + 
         Display +
         Debug;
-    type Element:
+    type GT:
         Eq + 
         Debug;
 
@@ -82,7 +71,7 @@ pub trait Curve {
     fn g1() -> Self::G1;
     fn g2() -> Self::G2;
     
-    fn pairing(x: &Self::G1, y: &Self::G2) -> Self::Element;
+    fn pairing(x: &Self::G1, y: &Self::G2) -> Self::GT;
 
     fn fiat_shamir_hash(z: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar; 
 }
@@ -114,7 +103,7 @@ impl Curve for SpecCurve {
     type G1 = spec::G1;
     type G2 = spec::G2;
     type Scalar = spec::Scalar;
-    type Element = spec::Fp12;
+    type GT = spec::Fp12;
 
     fn scalar_from_literal(x: &u128) -> Self::Scalar {
         spec::Scalar::from_literal(x.clone()) 
@@ -150,7 +139,7 @@ impl Curve for SpecCurve {
      (spec::Fp::from_hex("0ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801"),
       spec::Fp::from_hex("0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be")), false)
     }
-    fn pairing(x: &Self::G1, y: &Self::G2) -> Self::Element {
+    fn pairing(x: &Self::G1, y: &Self::G2) -> Self::GT {
         spec::pairing(x.clone(), y.clone())
     }
     
@@ -178,7 +167,7 @@ impl Curve for FastCurve {
     type G1 = blstrs::G1Projective;
     type G2 = blstrs::G2Projective;
     type Scalar = blstrs::Scalar;
-    type Element = blstrs::Gt;
+    type GT = blstrs::Gt;
  
     fn scalar_from_literal(x: &u128) -> Self::Scalar {
         blstrs::Scalar::from_u128(x.clone())
@@ -213,7 +202,7 @@ impl Curve for FastCurve {
     fn g2() -> Self::G2 {
        blstrs::G2Projective::generator() 
     }
-    fn pairing(x: &Self::G1, y: &Self::G2) -> Self::Element {
+    fn pairing(x: &Self::G1, y: &Self::G2) -> Self::GT {
         let left = blstrs::G1Affine::from(x);
         let right = blstrs::G2Affine::from(y);
         blstrs::pairing(&left, &right)

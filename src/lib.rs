@@ -1,21 +1,20 @@
 //! # Zero-Knowledge Set Membership Proofs
 //!
-//! This library implements a zero-knowledge proof system for set membership using polynomial 
-//! commitments and KZG (Kate-Zaverucha-Goldberg) proofs. It allows a prover to demonstrate 
+//! This library implements a nearly zk KZG set commitment scheme. It allows a prover to prove 
 //! membership (or non-membership) of an element in a committed set without revealing the 
 //! entire set or any additional information.
 //!
 //! ## Overview
 //!
-//! The protocol works by:
-//! 1. Representing sets as polynomials where roots correspond to set elements
-//! 2. Creating polynomial commitments using elliptic curve cryptography
-//! 3. Generating zero-knowledge proofs for membership queries
-//! 4. Using Schnorr proofs for non-membership cases
+//! The protocol steps are:
+//! 1. The prover commits to a set and creates a polynomial commitment from the set
+//! 2. The verifier queries set membership for a specific element 
+//! 3. The prover sends the verifier a proof of set membership or non-membership
+//! 4. The verifier verifies the proof using pairings and Schnorr signatures
 //!
 //! ## Basic Usage
 //!
-//! ```rust
+//! ```
 //! use kzg::{setup, commitzk, queryzk, verifyzk, Pk};
 //! use std::collections::HashSet;
 //! use kzg::curve::Curve;
@@ -48,57 +47,37 @@
 //! the following security properties apply
 //! 
 //! - **Zero-knowledge**: Proofs reveal no information about the set beyond membership
-//! - **Soundness**: Invalid proofs are rejected with overwhelming probability
+//! - **Soundness**: Invalid proofs are always rejected 
 //! - **Completeness**: Valid proofs are always accepted
 //!
 //! 
-//! ### Supported Curve Types
-//!
-//! The library works with any curve implementing the `Curve` trait, which provides:
-//! - **G1 and G2 groups**: Elliptic curve points for commitments and verification
-//! - **Scalar field operations**: Arithmetic in the curve's scalar field
-//! - **Pairing operations**: Bilinear maps e(G1, G2) → GT for verification
-//! - **Hash functions**: Fiat-Shamir transformation for non-interactive proofs
-//!
-//! ### Example Curve Selection
+//! ### Abstract Curve
+//! 
+//! The protocol uses dependency injection of the `Curve` trait
+//! so the curve implementation can be changed at runtime
 //!
 //! ```
-//! // Use a specification-friendly curve (slower but easier to verify)
-//! use kzg::curve::Curve;
 //! use kzg::{Pk, setup};
-//! 
 //! let mut randomness = vec![10; 4];
 //! let degree = 4;
 //! 
+//! // Using the specification curve
 //! use kzg::curve::SpecCurve as SpecCurve;
 //! let pk: Pk<SpecCurve> = setup(degree, &mut randomness);
 //!
-//! // Use a performance-optimized curve
+//! // Using the fast curve
 //! use kzg::curve::FastCurve as FastCurve;
 //! let pk: Pk<FastCurve> = setup(degree, &mut randomness);
 //! ```
 //!
-//! ### Curve Selection Guidelines
-//!
-//! - **SpecCurve**: Choose for formal verification, auditing, or when simplicity is prioritized
-//! - **FastCurve**: Choose for production deployments where performance is critical
-//! - **Custom curves**: Implement the `Curve` trait for specialized requirements
-//!
-//! The same protocol and security guarantees apply regardless of curve choice, allowing
-//! users to optimize for their specific deployment constraints.
-//!
-//! 
 //! ## Dependencies
 //!
 //! This library depends on:
 //! - `hacspec_lib` for safe cryptographic primitives
-//! - A curve implementation providing elliptic curve operations
 //! - `hacspec-bls12-381` for safe elliptic curve operations
+//! - `hacspec-sha256` for safe hashing
 //! - `blstrs` for fast elliptic curve operations
 //! 
-//! ## Generic over curves
-//! 
-//! Implementing the `Curve` trait allows 
 
 pub mod curve;
 use curve::Curve;
@@ -109,20 +88,14 @@ use std::collections::HashSet;
 
 /// Public key structure containing the public key parameters
 /// 
-/// This structure holds the cryptographic parameters generated during the setup phase.
-/// It includes powers of a secret value α in both G1 and G2 groups, as well as additional
-/// parameters needed for the hiding commitment scheme.
-///
-/// # Type Parameters
-/// 
-/// * `T` - The elliptic curve type implementing the `Curve` trait
+/// This structure contains public key generated during the setup phase.
 ///
 /// # Fields
 /// 
 /// * `g_powers` - Powers of generator g: [g^(α^d), g^(α^(d-1)), ..., g^α, g]
 /// * `h_powers` - Powers of hiding generator h: [h^(α^d), h^(α^(d-1)), ..., h^α, h]  
 /// * `h1` - The hiding generator h
-/// * `alpha_g2` - g2^α in the G2 group for pairing verification
+/// * `alpha_g2` - α hidden by the generator g2
 pub struct Pk<T: Curve> {
     g_powers: Vec<T::G1>,
     h_powers: Vec<T::G1>,
@@ -131,12 +104,10 @@ pub struct Pk<T: Curve> {
 }
 
 
-/// runs the trusted authority setup phase 
+/// Runs the trusted authority setup phase 
 ///
-/// Generates the public parameters needed for the zero-knowledge proof system.
-/// This function creates powers of a secret value α that will be used for polynomial
-/// commitments. The secret α is derived from the provided randomness and is
-/// securely deleted after setup.
+/// Creates the public key used in the protocol
+/// Securely deletes α and λ to ensure soundness 
 ///
 /// # Arguments
 ///
@@ -179,14 +150,13 @@ pub fn setup<T: Curve>(degree: u128, random: &mut Vec<u128>) -> Pk<T> {
 /// Creates a zero-knowledge commitment to a set
 ///
 /// This function takes a set of elements and creates a polynomial commitment that
-/// represents the set. The commitment is unconditionally hiding due to the use of a random polynomial
-/// phi_hat(x) that masks the actual set polynomial φ(x).
+/// represents the set. The commitment φ(α) is unconditionally hidden by phi_hat(α).
 ///
 /// # Arguments
 ///
-/// * `pk` - Public parameters from the trusted setup
+/// * `pk` - The public key
 /// * `set` - The set of elements to commit to
-/// * `random` - Mutable vector of random values for the hiding polynomial
+/// * `random` - Mutable vector of random values
 ///
 /// # Returns
 ///
@@ -199,10 +169,6 @@ pub fn setup<T: Curve>(degree: u128, random: &mut Vec<u128>) -> Pk<T> {
 ///
 /// Panics if random.len() < set.len()
 ///
-/// # Complexity
-///
-/// O(n³) where n is the set size, due to polynomial multiplication.
-/// Could be optimized using FFT for larger sets.
 pub fn commitzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, random: &mut Vec<u128>) -> (T::G1, Vec<T::Scalar>, Vec<T::Scalar>) {
     let mut phi = vec![T::scalar_from_literal(&1)];
     
@@ -242,20 +208,20 @@ pub fn commitzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, random: &mut Vec
 ///
 /// # Arguments
 ///
-/// * `pk` - Public parameters from the trusted setup
+/// * `pk` - The public key
 /// * `set` - The original set that was committed to
-/// * `phi` - The polynomial φ from `commitzk`
-/// * `phi_hat` - The hiding polynomial phi_hat from `commitzk`
-/// * `kj` - The element being queried for membership
-/// * `random` - Mutable vector of random values for proof generation
+/// * `phi` - The polynomial φ
+/// * `phi_hat` - The hiding polynomial phi_hat
+/// * `kj` - The queried element
+/// * `random` - Mutable vector of random values
 ///
 /// # Returns
 ///
 /// A tuple containing:
-/// * `T::Scalar` - The queried element kⱼ
-/// * `T::G1` - The witness W = g^ψ(α) · h^psi_hat(α)
-/// * `Option<T::Scalar>` - psi_hat(kⱼ) if element is in set, None otherwise
-/// * `Option<(T::G1, T::G1, T::G1, T::Scalar, T::Scalar)>` - Schnorr proof if element not in set
+/// * `T::Scalar` - The queried element kj
+/// * `T::G1` - The witness w = g^ψ(α) · h^psi_hat(α)
+/// * `Option<T::Scalar>` - psi_hat(kj) if element is in set, None otherwise
+/// * `Option<(T::G1, T::G1, T::G1, T::Scalar, T::Scalar)>` - Schnorr proof if element not in set, None otherwise
 ///
 ///
 /// # Panics
@@ -284,30 +250,24 @@ pub fn queryzk<T: Curve>(pk: &Pk<T>, set: &HashSet<T::Scalar>, phi: &Vec<T::Scal
 }
 
 
-/// Verifies a zero-knowledge membership proof
+/// Verifies an evaluation of the KZG protocol
 ///
-/// This function verifies whether a proof generated by `queryzk` is valid.
-/// It handles both membership proofs (where phi_hat(kⱼ) is revealed) and non-membership
-/// proofs (where a Schnorr proof is provided).
+/// This function verifies whether or not a prover is honest
 ///
 /// # Arguments
 ///
-/// * `pk` - Public parameters from the trusted setup
-/// * `commitment` - The commitment from `commitzk`
+/// * `pk` - The public key
+/// * `commitment` - The polynomial commitment
 /// * `pi_sj` - Optional Schnorr proof for non-membership
 /// * `kj` - The queried element
-/// * `witness` - The witness from `queryzk`
-/// * `phi_hat_kj` - Optional evaluation phi_hat(kⱼ) for membership proofs
+/// * `witness` - The witness
+/// * `phi_hat_kj` - Optional evaluation phi_hat(kj)
 ///
 /// # Returns
 ///
-/// `true` if the proof is valid, `false` otherwise
+/// `true` if the prover is honest
+/// `false` if the prover is dishonest
 ///
-/// # Security
-///
-/// This function implements the verification equations that ensure:
-/// - Membership proofs satisfy: e(W, g2^α - g2^kⱼ) = e(C - h^phi_hat(kⱼ), g2)
-/// - Non-membership proofs include valid Schnorr proofs and pairing checks
 pub fn verifyzk<T: Curve>(pk: &Pk<T>, commitment: T::G1, pi_sj: Option<(T::G1, T::G1, T::G1, T::Scalar, T::Scalar)>,
 kj: T::Scalar, witness: T::G1, phi_hat_kj: Option<T::Scalar>) -> bool {
 
@@ -475,108 +435,111 @@ fn create_witness<T: Curve>(phi: &Vec<T::Scalar>, phi_hat: &Vec<T::Scalar>, i: T
 }
 
 
-// VERIFiABLE FUNCTIONS USING HAX: 
+// These are the functions we were able to verify
+// Since we could not verify functions that were generic over the curve
+// These functions had to be copied and modified to not use the Curve trait
+
 
 use hacspec_bls12_381::*;
 
-    fn g1sub(x: G1, y: G1) -> G1 {
-        g1add(x, g1neg(y))
-    }
+fn g1sub(x: G1, y: G1) -> G1 {
+    g1add(x, g1neg(y))
+}
 
-    fn g2sub(x: G2, y: G2) -> G2 {
-        g2add(x, g2neg(y))
-    }
+fn g2sub(x: G2, y: G2) -> G2 {
+    g2add(x, g2neg(y))
+}
 
-    fn g1() -> G1 {
-    (Fp::from_hex("17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"),
-     Fp::from_hex("08b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1"), false)
-    }
-    fn g2() -> G2 {
-    ((Fp::from_hex("24aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8"),
-      Fp::from_hex("13e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e")),
-     (Fp::from_hex("0ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801"),
-      Fp::from_hex("0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be")), false)
+fn g1() -> G1 {
+(Fp::from_hex("17f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb"),
+ Fp::from_hex("08b3f481e3aaa0f1a09e30ed741d8ae4fcf5e095d5d00af600db18cb2c04b3edd03cc744a2888ae40caa232946c5e7e1"), false)
+}
+fn g2() -> G2 {
+((Fp::from_hex("24aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8"),
+  Fp::from_hex("13e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e")),
+ (Fp::from_hex("0ce5d527727d6e118cc9cdc6da2e351aadfd9baa8cbdd3a76d429a695160d12c923ac9cc3baca289e193548608b82801"),
+  Fp::from_hex("0606c4a02ea734cc32acd2b02bc28b99cb3e287e85a763af267492ab572e99ab3f370d275cec1da1aaa9075ff05f79be")), false)
+}
+
+struct PkVerifiable {    
+    g_powers: Vec<G1>,
+    h_powers: Vec<G1>,
+    h1: G1,
+    alpha_g2: G2
+}
+
+
+#[hax_lib::requires(pk.len() >= polynomial.len())]
+fn commit_poly_verifiable(polynomial: &Vec<Scalar> , pk: &Vec<G1>, generator: G1) -> G1 {
+    // commit to the original polynomial
+    let mut commitment = g1sub(generator, generator);
+    
+    let difference = pk.len() - polynomial.len();
+    for i in 0..polynomial.len() { 
+        let power_index = difference + i;
+        
+        let current = g1mul(polynomial[i], pk[power_index]);
+        commitment = g1add(commitment, current);
+    };
+    commitment
+}
+
+
+fn verifyeval_verifiable(pk: &PkVerifiable, commitment: G1, kj: Scalar, phi_kj: Scalar, phi_hat_kj: Scalar, witness: G1) -> bool {
+    
+    let left = pairing(witness, g2sub(pk.alpha_g2, g2mul(kj, g2())));
+
+    let ys = g1add(g1mul(phi_kj, g1()), g1mul(phi_hat_kj, pk.h1));
+
+    let right = pairing(g1sub(commitment, ys), g2());
+    
+    left == right
+}
+
+fn g1_to_byte_seq_verifiable(g: G1) -> hacspec_lib::ByteSeq {
+    let (x, y, inf) = g;
+    let x_bytes = x.to_byte_seq_be();  
+    let result= x_bytes.concat(&y.to_byte_seq_be());
+    
+    let mut inf_bytes = hacspec_lib::U8::zero();
+    
+    if inf {
+        inf_bytes = hacspec_lib::U8::one();
     }
     
-    struct PkVerifiable {    
-        g_powers: Vec<G1>,
-        h_powers: Vec<G1>,
-        h1: G1,
-        alpha_g2: G2
-    }
+    result.push(&inf_bytes)
+}
+
+fn fiat_shamir_hash_verifiable(z: G1, n1: G1, n2: G1, h: G1) -> Scalar {
+    let g = g1_to_byte_seq_verifiable(g1());
+    let h = g1_to_byte_seq_verifiable(h);
+    let z = g1_to_byte_seq_verifiable(z);
+    let n1 = g1_to_byte_seq_verifiable(n1);
+    let n2 = g1_to_byte_seq_verifiable(n2);
+
+    let bytes = g.concat(&h).concat(&z).concat(&n1).concat(&n2);
     
+    let digest = hacspec_sha256::hash(&bytes);
 
-    #[hax_lib::requires(pk.len() >= polynomial.len())]
-    fn commit_poly_verifiable(polynomial: &Vec<Scalar> , pk: &Vec<G1>, generator: G1) -> G1 {
-        // commit to the original polynomial
-        let mut commitment = g1sub(generator, generator);
-        
-        let difference = pk.len() - polynomial.len();
-        for i in 0..polynomial.len() { 
-            let power_index = difference + i;
-            
-            let current = g1mul(polynomial[i], pk[power_index]);
-            commitment = g1add(commitment, current);
-        };
-        commitment
-    }
+    Scalar::from_byte_seq_be(&digest)
+} 
 
-
-    fn verifyeval_verifiable(pk: &PkVerifiable, commitment: G1, kj: Scalar, phi_kj: Scalar, phi_hat_kj: Scalar, witness: G1) -> bool {
-        
-        let left = pairing(witness, g2sub(pk.alpha_g2, g2mul(kj, g2())));
-
-        let ys = g1add(g1mul(phi_kj, g1()), g1mul(phi_hat_kj, pk.h1));
-
-        let right = pairing(g1sub(commitment, ys), g2());
-        
-        left == right
-    }
+fn schnorr_verify_verifiable(pk: &PkVerifiable, z: G1, n1: G1, n2: G1, s1: Scalar, s2: Scalar) -> bool {
     
-    fn g1_to_byte_seq_verifiable(g: G1) -> hacspec_lib::ByteSeq {
-        let (x, y, inf) = g;
-        let x_bytes = x.to_byte_seq_be();  
-        let result= x_bytes.concat(&y.to_byte_seq_be());
-        
-        let mut inf_bytes = hacspec_lib::U8::zero();
-        
-        if inf {
-            inf_bytes = hacspec_lib::U8::one();
-        }
-        
-        result.push(&inf_bytes)
-    }
+    let c = fiat_shamir_hash_verifiable(z, n1, n2, pk.h1);
 
-    fn fiat_shamir_hash_verifiable(z: G1, n1: G1, n2: G1, h: G1) -> Scalar {
-        let g = g1_to_byte_seq_verifiable(g1());
-        let h = g1_to_byte_seq_verifiable(h);
-        let z = g1_to_byte_seq_verifiable(z);
-        let n1 = g1_to_byte_seq_verifiable(n1);
-        let n2 = g1_to_byte_seq_verifiable(n2);
+    let left  = g1add(n1, n2);
 
-        let bytes = g.concat(&h).concat(&z).concat(&n1).concat(&n2);
-        
-        let digest = hacspec_sha256::hash(&bytes);
+    let s1 = g1mul(s1, g1());
 
-        Scalar::from_byte_seq_be(&digest)
-    } 
+    let s2 = g1mul(s2, pk.h1);
+    
+    let z = g1mul(c, z);
 
-    fn schnorr_verify_verifiable(pk: &PkVerifiable, z: G1, n1: G1, n2: G1, s1: Scalar, s2: Scalar) -> bool {
-        
-        let c = fiat_shamir_hash_verifiable(z, n1, n2, pk.h1);
+    let right = g1add(g1add(s1, s2), z);
 
-        let left  = g1add(n1, n2);
-
-        let s1 = g1mul(s1, g1());
-
-        let s2 = g1mul(s2, pk.h1);
-        
-        let z = g1mul(c, z);
-
-        let right = g1add(g1add(s1, s2), z);
-
-        left == right
-    }
+    left == right
+}
 
 
 
