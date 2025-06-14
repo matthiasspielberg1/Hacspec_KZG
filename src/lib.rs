@@ -785,6 +785,7 @@ mod tests {
 
         let mut kj = Curve::scalar_from_literal(&0);
         for _ in 0..degree {
+            // kj is in the set
             kj = Curve::scalar_from_literal(&random.pop().expect("not enough randomness provided"));
             set.insert(kj);
         }
@@ -800,6 +801,7 @@ mod tests {
         let (kj, witness, _phi_hat_kj, _pi_sj) = queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random);
 		
 
+        // creating this part of the schnorr proof manually
 		let phi_kj =  apply::<Curve>(&phi, &kj);
 		let phi_hat_kj =  apply::<Curve>(&phi_hat, &kj);
 
@@ -812,6 +814,7 @@ mod tests {
 		let pi = (proof, n1, n2, s1, s2);
 
 
+        // falsely claiming that phi(kj) != 0
         let result = verifyzk(&pk, commitment, Some(pi), kj, witness, None);
 
         return ! result

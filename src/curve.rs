@@ -20,6 +20,7 @@
 use std::ops::{Add, Mul, Sub};
 use std::hash::{Hash, DefaultHasher, Hasher};
 use std::fmt::{Display, Debug};
+use sha2::{Sha256, Digest};
 
 mod spec {
    pub use hacspec_bls12_381::*; 
@@ -209,17 +210,22 @@ impl Curve for FastCurve {
     }
     
     fn fiat_shamir_hash(z: Self::G1, n1: Self::G1, n2: Self::G1, h: Self::G1) -> Self::Scalar {
-        let mut hasher = DefaultHasher::new();
-        // the fast library only provides the tostring method for 
+        let mut hasher = Sha256::new();
+
+        hasher.update(z.to_string());
+        hasher.update(n1.to_string());
+        hasher.update(n2.to_string());
+        hasher.update(h.to_string());
+        hasher.update(Self::g1().to_string());
         
-        z.to_string().hash(&mut hasher);
-        n1.to_string().hash(&mut hasher);
-        n2.to_string().hash(&mut hasher);
-        h.to_string().hash(&mut hasher);
+        let mut res: [u8; 32] = hasher.finalize().into();
+        // the function crashes if the hash is larger than the modulo value
+        // the quick and dirty solution is to just zero this byte :(
+        res[0] = 0;
         
-        let res = hasher.finish();
-        Self::Scalar::from(res)
-    } 
+        blstrs::Scalar::from_bytes_be(&res).expect("could not create scalar from hash")
+    }
+
 }
 
 
