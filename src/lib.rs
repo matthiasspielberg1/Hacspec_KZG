@@ -678,7 +678,6 @@ mod tests {
     
     
     // this tests completeness
-
     #[quickcheck] 
     fn test_kzg_verification(is_in_set: bool, degree: u8) -> bool {
         // use curve::SpecCurve as Curve;
@@ -773,7 +772,7 @@ mod tests {
     // then the verification fails
     // tests for soundness
     #[quickcheck] 
-    fn test_kzg_false_claim() -> bool {
+    fn test_kzg_deniability() -> bool {
         // use curve::SpecCurve as Curve;
         use curve::FastCurve as Curve;
 
@@ -816,6 +815,50 @@ mod tests {
 
         // falsely claiming that phi(kj) != 0
         let result = verifyzk(&pk, commitment, Some(pi), kj, witness, None);
+
+        return ! result
+    }
+    
+
+    
+    // this tests that if the prover just lies about
+    // phi(kj) == 0
+    // then the verification fails
+    // tests for soundness
+    #[quickcheck] 
+    fn test_kzg_false_claim() -> bool {
+        // use curve::SpecCurve as Curve;
+        use curve::FastCurve as Curve;
+
+        let degree = 10;
+
+        let mut random = generate_randomness(degree + 1); 
+        
+        let mut set = HashSet::new();
+
+        let mut kj = Curve::scalar_from_literal(&0);
+        for _ in 0..degree {
+            kj = Curve::scalar_from_literal(&random.pop().expect("not enough randomness provided"));
+            set.insert(kj);
+        }
+        
+        // kj should not be in the set with overwhelming probability
+        let mut random = generate_randomness(1);
+        kj = Curve::scalar_from_literal(&random.pop().expect("not enough randomness provided"));
+ 
+
+        let mut random = generate_randomness(degree + 5);
+        
+
+        let pk: Pk<Curve> = setup(degree as u128, &mut random);
+        
+
+        let (commitment, phi, phi_hat) = commitzk(&pk, &set, &mut random); 
+    
+        let (kj, witness, phi_hat_kj, _pi_sj) = queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random);
+
+        // falsely claiming that phi(kj) != 0
+        let result = verifyzk(&pk, commitment, None, kj, witness, phi_hat_kj);
 
         return ! result
     }

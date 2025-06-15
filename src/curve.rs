@@ -18,7 +18,7 @@
 //! A performance-optimized implementation using `blstrs`
 
 use std::ops::{Add, Mul, Sub};
-use std::hash::{Hash, DefaultHasher, Hasher};
+use std::hash::Hash;
 use std::fmt::{Display, Debug};
 use sha2::{Sha256, Digest};
 
