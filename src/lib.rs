@@ -330,7 +330,7 @@ fn schnorr_proof<T: Curve>(pk: &Pk<T>, a: T::Scalar, b: T::Scalar, random: &mut 
     
     let z = T::g1add(&z1, &z2);
 
-    let c = T::fiat_shamir_hash(z, n1, n2, pk.h1);
+    let c = T::fiat_shamir_hash(z, n1, n2, pk.h1, T::g1());
 
     let s1 = r1 - c * a; 
     let s2 = r2 - c * b; 
@@ -340,7 +340,7 @@ fn schnorr_proof<T: Curve>(pk: &Pk<T>, a: T::Scalar, b: T::Scalar, random: &mut 
 
 fn schnorr_verify<T: Curve>(pk: &Pk<T>, z: T::G1, n1: T::G1, n2: T::G1, s1: T::Scalar, s2: T::Scalar) -> bool {
     
-    let c = T::fiat_shamir_hash(z, n1, n2, pk.h1);
+    let c = T::fiat_shamir_hash(z, n1, n2, pk.h1, T::g1());
 
     let left  = T::g1add(&n1, &n2);
 
@@ -857,7 +857,7 @@ mod tests {
     
         let (kj, witness, phi_hat_kj, _pi_sj) = queryzk(&pk, &set, &phi, &phi_hat, kj, &mut random);
 
-        // falsely claiming that phi(kj) != 0
+        // falsely claiming that phi(kj) == 0
         let result = verifyzk(&pk, commitment, None, kj, witness, phi_hat_kj);
 
         return ! result
